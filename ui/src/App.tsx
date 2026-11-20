@@ -202,6 +202,7 @@ export default function App() {
   const [selectedTx, setSelectedTx] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const guard = useRef(false);
   // The ledger survives /admin/reset; remember its length so the overview card goes idle after a reset.
@@ -218,13 +219,8 @@ export default function App() {
     if (guard.current) return;
     guard.current = true;
     try {
-      const [s, e, l] = await Promise.all([
-        fetch(`${API_BASE}/state`),
-        fetch(`${API_BASE}/events`),
-        fetch(`${API_BASE}/ledger`),
-      ]);
+      const [s, l] = await Promise.all([fetch(`${API_BASE}/state`), fetch(`${API_BASE}/ledger`)]);
       if (s.ok) setState((await s.json()) as StatePayload);
-      if (e.ok) setEvents(((await e.json()) as { events?: ProxyEvent[] }).events ?? []);
       if (l.ok) setReceipts(((await l.json()) as { receipts?: TxReceipt[] }).receipts ?? []);
       setOnline(s.ok);
     } catch {
@@ -234,10 +230,35 @@ export default function App() {
     }
   }, []);
 
+  // Proxy events arrive over Server-Sent Events (/events/stream); each one also triggers a
+  // debounced re-read of /state and /ledger. A slow poll covers missed updates.
   useEffect(() => {
     void refresh();
-    const t = window.setInterval(() => void refresh(), 1000);
-    return () => window.clearInterval(t);
+    let debounce: number | undefined;
+    const soon = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => void refresh(), 200);
+    };
+    const es = new EventSource(`${API_BASE}/events/stream`);
+    es.onopen = () => {
+      setStreaming(true);
+      setEvents([]); // the server replays the full log on every (re)connect
+    };
+    es.onerror = () => setStreaming(false); // EventSource reconnects on its own
+    es.addEventListener('proxy', (m) => {
+      setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
+      soon();
+    });
+    es.addEventListener('reset', () => {
+      setEvents([]);
+      soon();
+    });
+    const t = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      es.close();
+      window.clearInterval(t);
+      window.clearTimeout(debounce);
+    };
   }, [refresh]);
 
   const post = async (path: string, body?: unknown) => {
@@ -324,6 +345,9 @@ export default function App() {
           <div className="hidden items-center gap-2 font-mono text-[12px] text-muted md:flex">
             <span className={`h-2 w-2 rounded-full ${online ? 'bg-[#16a34a]' : 'bg-danger'}`} />
             {API_BASE.replace(/^https?:\/\//, '')}
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${streaming ? 'bg-[#e3f2e8] text-[#14532d]' : 'bg-[#f3f4f6] text-muted'}`}>
+              {streaming ? 'SSE live' : 'SSE off'}
+            </span>
           </div>
         </div>
       </header>
