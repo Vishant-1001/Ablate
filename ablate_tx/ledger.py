@@ -31,10 +31,24 @@ class Ledger:
             return list(self._receipts)
 
     def verify(self) -> bool:
+        return self.verify_report()["chain_valid"]
+
+    def verify_report(self) -> dict:
+        """Re-hash every receipt from genesis. Reports the first break: a prev_hash that
+        does not link to the previous receipt, or contents that no longer hash to
+        receipt_hash (i.e. the receipt was edited after sealing)."""
+        receipts = self.all()
         prev = GENESIS
-        for r in self.all():
+        for i, r in enumerate(receipts):
             body = {k: v for k, v in r.items() if k != "receipt_hash"}
-            if r["prev_hash"] != prev or sha256_hex(prev + canonical_json(body)) != r["receipt_hash"]:
-                return False
+            reason = None
+            if r.get("prev_hash") != prev:
+                reason = "prev_hash does not match the previous receipt's hash"
+            elif sha256_hex(prev + canonical_json(body)) != r.get("receipt_hash"):
+                reason = "contents changed after sealing: recomputed hash != receipt_hash"
+            if reason:
+                return {"chain_valid": False, "receipts": len(receipts), "verified": i,
+                        "first_broken": {"index": i, "tx_id": r.get("tx_id"), "reason": reason}}
             prev = r["receipt_hash"]
-        return True
+        return {"chain_valid": True, "receipts": len(receipts), "verified": len(receipts),
+                "first_broken": None, "head_hash": prev}

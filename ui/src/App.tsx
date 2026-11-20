@@ -869,6 +869,26 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
   const blocked = receipts.filter((r) => r.status === 'ABORTED_IN_SHADOW').length;
   const pick = sel ?? (receipts.length ? receipts.length - 1 : null);
   const r = pick !== null ? receipts[pick] : null;
+
+  // Server-side full re-hash of the chain (GET /ledger/verify), refreshed whenever the ledger grows.
+  type VerifyReport = { chain_valid: boolean; receipts: number; verified: number; first_broken: { index: number; tx_id: string; reason: string } | null };
+  const [server, setServer] = useState<VerifyReport | null>(null);
+  const [checking, setChecking] = useState(false);
+  const runVerify = useCallback(async () => {
+    setChecking(true);
+    try {
+      const res = await fetch(`${API_BASE}/ledger/verify`);
+      setServer(res.ok ? ((await res.json()) as VerifyReport) : null);
+    } catch {
+      setServer(null);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+  useEffect(() => {
+    void runVerify();
+  }, [runVerify, receipts.length]);
+
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8">
       <h1 className="text-[26px] font-bold">Assurance</h1>
@@ -876,9 +896,32 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
         Every receipt embeds the hash of the one before it: SHA-256(prev_hash + canonical receipt). Editing any past
         receipt breaks every link after it.
       </p>
+      <div
+        className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-5 py-3 ${
+          !server ? 'border-line' : server.chain_valid ? 'border-[#15803d] bg-[#f3faf5]' : 'border-danger bg-[#fffbfa]'
+        }`}
+      >
+        <div>
+          <div className={`text-[15px] font-bold ${!server ? 'text-muted' : server.chain_valid ? 'text-[#15803d]' : 'text-danger'}`}>
+            {!server
+              ? 'Server re-hash unavailable'
+              : server.chain_valid
+                ? `Server re-hash: chain valid · ${server.verified}/${server.receipts} receipts`
+                : `Server re-hash: chain BROKEN at receipt #${(server.first_broken?.index ?? 0) + 1}`}
+          </div>
+          <div className="text-[12px] text-muted">
+            {server?.first_broken
+              ? `${server.first_broken.tx_id}: ${server.first_broken.reason}`
+              : 'GET /ledger/verify recomputes every receipt hash from genesis on the server.'}
+          </div>
+        </div>
+        <button onClick={() => void runVerify()} disabled={checking} className="rounded-lg bg-ink px-4 py-2 text-[13px] font-semibold text-white hover:bg-black disabled:opacity-50">
+          {checking ? 'Verifying…' : 'Verify chain now'}
+        </button>
+      </div>
       <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Receipts in chain" value={receipts.length} />
-        <Stat label="Links verified" value={`${verified}/${receipts.length}`} tone={verified !== receipts.length ? 'red' : undefined} />
+        <Stat label="Links verified (browser)" value={`${verified}/${receipts.length}`} tone={verified !== receipts.length ? 'red' : undefined} />
         <Stat label="Clean rollbacks (hash-proven)" value={clean} />
         <Stat label="Blocked in shadow" value={blocked} />
       </div>
@@ -933,7 +976,7 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
               <div className="break-all">prev&nbsp; {r.prev_hash}</div>
               <div className="break-all">hash&nbsp; {r.receipt_hash}</div>
             </div>
-            <p className="mt-3 text-[12px] text-muted">The browser checks the links between receipts. The full re-hash runs server-side (ablate_tx.ledger.verify).</p>
+            <p className="mt-3 text-[12px] text-muted">The browser checks the links between receipts; the banner above shows the server's full re-hash (GET /ledger/verify).</p>
             <button onClick={() => onOpen(r.tx_id)} className="mt-3 text-[14px] text-[#1d4ed8] underline">
               Open case file
             </button>
