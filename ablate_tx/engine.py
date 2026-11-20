@@ -168,7 +168,7 @@ class Engine:
         t_start = time.perf_counter()
         receipt: dict = {
             "tx_id": tx.tx_id, "ts": _now(), "aegis_enabled": tx.aegis, "status": None,
-            "invariants": [], "pre_tx_hashes": tx.pre_tx_hashes, "post_tx_hashes": {},
+            "invariants": {}, "invariant_checks": [], "commit_order": [], "pre_tx_hashes": tx.pre_tx_hashes, "post_tx_hashes": {},
             "hashes_match": None, "rollback_ms": None, "compensations": [], "steps": [],
             "failure": None, "quarantine": [],
         }
@@ -178,7 +178,8 @@ class Engine:
                     receipt["steps"] = tx.live_steps
                     receipt["failure"] = tx.live_failure
                     receipt["status"] = "PARTIAL_CORRUPTION" if tx.live_failure else "COMMITTED"
-                    receipt["invariants"] = [{"name": "aegis_disabled", "layer": 0, "result": "SKIPPED", "detail": {}}]
+                    receipt["invariant_checks"] = [{"name": "aegis_disabled", "layer": 0, "result": "SKIPPED", "detail": {}}]
+                    receipt["commit_order"] = [s["tool"] for s in tx.live_steps]
                 else:
                     self._commit_aegis(tx, receipt)
             finally:
@@ -206,7 +207,8 @@ class Engine:
             receipt["status"] = "ABORTED_IN_SHADOW"
             receipt["failure"] = e.to_dict()
             return
-        receipt["invariants"] = checks
+        receipt["invariant_checks"] = checks
+        receipt["invariants"] = invariant_map(checks)
         for c in checks:
             self.emit(tx.tx_id, "VALIDATE", c["result"], f"L{c['layer']} {c['name']}: {c['result']}", c["detail"])
         if verdict == "TAINT":
@@ -225,6 +227,7 @@ class Engine:
         self.emit(tx.tx_id, "FLUSH", "FLUSH_START", f"flushing {len(tx.staged)} staged call(s) to live services", {})
         out = self.saga.flush(tx)
         receipt.update({k: out[k] for k in ("steps", "compensations", "failure", "quarantine", "rollback_ms")})
+        receipt["commit_order"] = [st["tool"] for st in out["steps"]]
         if out["failure"] is None:
             receipt["status"] = "COMMITTED"
         elif out["quarantine"]:
@@ -233,6 +236,18 @@ class Engine:
             receipt["status"] = "ROLLED_BACK_CLEANLY"
         else:
             receipt["status"] = "PARTIAL_CORRUPTION"
+
+
+_MAP_NAMES = {"provenance_taint": "taint_check"}
+
+
+def invariant_map(checks: list[dict]) -> dict[str, bool]:
+    """{invariant_name: passed} as the UI/tests read it; dry-run checks fold into `dry_run`."""
+    out: dict[str, bool] = {}
+    for c in checks:
+        name = "dry_run" if c["name"].startswith("dry_run") else _MAP_NAMES.get(c["name"], c["name"])
+        out[name] = out.get(name, True) and c["result"] == "PASS"
+    return out
 
 
 ENGINE: Engine | None = None

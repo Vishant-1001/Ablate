@@ -122,6 +122,11 @@ export default function App() {
     [receipts],
   );
 
+  // The ledger is a hash chain and survives /admin/reset, so remember how many receipts
+  // existed at the last reset: the invariant panel stays IDLE until a newer one arrives.
+  const [receiptsAtReset, setReceiptsAtReset] = useState(0);
+  const invariantsIdle = !latestReceipt || receipts.length <= receiptsAtReset;
+
   const fetchSnapshot = useCallback(async () => {
     if (pollGuardRef.current) return;
     pollGuardRef.current = true;
@@ -197,6 +202,7 @@ export default function App() {
         if (sData && sData.erp) {
           setState(sData);
         }
+        setReceiptsAtReset(receipts.length);
       }
       await fetchSnapshot();
     } catch (err) {
@@ -650,14 +656,20 @@ export default function App() {
               </div>
               <div className="grid grid-cols-1 gap-1.5">
                 {INVARIANT_META.map((inv) => {
+                  // No result for this check on the latest receipt (e.g. Aegis OFF): it never ran.
+                  const idle = invariantsIdle;
+                  const skipped = !idle && activeInvariants[inv.key] === undefined;
+                  const neutral = idle || skipped;
                   const passed = activeInvariants[inv.key] !== false;
                   return (
                     <div
                       key={inv.key}
                       className={`px-2.5 py-1.5 rounded border flex items-center justify-between ${
-                        passed
-                          ? 'bg-emerald-950/25 border-emerald-800/60 text-emerald-200'
-                          : 'bg-rose-950/40 border-rose-700 text-rose-200'
+                        neutral
+                          ? 'bg-slate-900/60 border-slate-700 text-slate-400'
+                          : passed
+                            ? 'bg-emerald-950/25 border-emerald-800/60 text-emerald-200'
+                            : 'bg-rose-950/40 border-rose-700 text-rose-200'
                       }`}
                     >
                       <div className="flex flex-col">
@@ -671,12 +683,14 @@ export default function App() {
                       </div>
                       <span
                         className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                          passed
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-rose-500/30 text-rose-200'
+                          neutral
+                            ? 'bg-slate-700/40 text-slate-400'
+                            : passed
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-rose-500/30 text-rose-200'
                         }`}
                       >
-                        {passed ? 'PASS' : 'VIOLATION'}
+                        {idle ? 'IDLE' : skipped ? 'SKIPPED' : passed ? 'PASS' : 'VIOLATION'}
                       </span>
                     </div>
                   );
@@ -768,11 +782,23 @@ export default function App() {
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        {comp.for_tool ? `Reversing ${comp.for_tool}` : ''}{' '}
-                        {comp.inverse_delta !== undefined
-                          ? `• Commutative Δ: ${comp.inverse_delta > 0 ? `+${comp.inverse_delta}` : comp.inverse_delta}`
-                          : ''}
-                        {comp.po_id ? `• Record: ${comp.po_id}` : ''}
+                        {(() => {
+                          // Backend compensation: {tool, strategy, status, call: {tool, args}, three_way_diff?}
+                          const call = comp.call as { tool?: string; args?: Record<string, unknown> } | undefined;
+                          const delta = comp.inverse_delta ?? call?.args?.delta_qty;
+                          const record =
+                            comp.po_id ?? call?.args?.po_id ?? call?.args?.entry_id ?? call?.args?.credit_id;
+                          return [
+                            comp.strategy ? `${comp.strategy} via ${call?.tool ?? 'quarantine (no write)'}` : '',
+                            comp.for_tool ? `Reversing ${comp.for_tool}` : '',
+                            delta !== undefined
+                              ? `• Commutative Δ: ${Number(delta) > 0 ? `+${String(delta)}` : String(delta)}`
+                              : '',
+                            record !== undefined ? `• Record: ${String(record)}` : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ');
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -947,10 +973,10 @@ export default function App() {
                       <thead>
                         <tr className="border-b border-slate-800 text-[10px] text-slate-400">
                           <th className="py-1 pr-2">PO_ID</th>
-                          <th className="py-1 pr-2">VENDOR / IBAN</th>
-                          <th className="py-1 pr-2">AMOUNT</th>
+                          <th className="py-1 pr-2">VENDOR / SKU</th>
+                          <th className="py-1 pr-2">QTY × PRICE</th>
                           <th className="py-1 pr-2">STATUS</th>
-                          <th className="py-1">ETAG</th>
+                          <th className="py-1">VERSION</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60">
@@ -959,14 +985,16 @@ export default function App() {
                             <td className="py-1.5 pr-2 font-bold text-white">{po.po_id}</td>
                             <td className="py-1.5 pr-2">
                               <div className="text-slate-200 truncate max-w-[140px]">
-                                {po.vendor || 'Approved Vendor'}
+                                {String(po.vendor_id ?? po.vendor ?? 'Approved Vendor')}
                               </div>
-                              {po.iban && (
-                                <div className="text-[10px] text-slate-400">{po.iban}</div>
+                              {po.sku !== undefined && (
+                                <div className="text-[10px] text-slate-400">{String(po.sku)}</div>
                               )}
                             </td>
                             <td className="py-1.5 pr-2 text-emerald-300">
-                              {formatUsd(po.amount_usd ?? po.amount)}
+                              {po.qty !== undefined
+                                ? `${String(po.qty)} × ${formatUsd(Number(po.unit_price))}`
+                                : formatUsd(po.amount_usd ?? po.amount)}
                             </td>
                             <td className="py-1.5 pr-2">
                               <span
@@ -982,7 +1010,7 @@ export default function App() {
                               </span>
                             </td>
                             <td className="py-1.5 text-[10px] text-slate-400">
-                              {shortHash(po.etag, 12)}
+                              {po.version !== undefined ? `v${String(po.version)}` : shortHash(po.etag, 12)}
                             </td>
                           </tr>
                         ))}
@@ -1001,7 +1029,7 @@ export default function App() {
                       <thead>
                         <tr className="border-b border-slate-800 text-[10px] text-slate-400">
                           <th className="py-1 pr-2">ENTRY</th>
-                          <th className="py-1 pr-2">ACCOUNT</th>
+                          <th className="py-1 pr-2">PO</th>
                           <th className="py-1 pr-2">DEBIT</th>
                           <th className="py-1 pr-2">CREDIT</th>
                           <th className="py-1">MEMO</th>
@@ -1013,7 +1041,7 @@ export default function App() {
                             <td className="py-1 pr-2 text-slate-300">
                               {gl.entry_id || gl.id || `GL-${i + 1}`}
                             </td>
-                            <td className="py-1 pr-2 text-white">{gl.account}</td>
+                            <td className="py-1 pr-2 text-white">{String(gl.po_id ?? gl.account ?? '')}</td>
                             <td className="py-1 pr-2 text-emerald-300">{formatUsd(gl.debit)}</td>
                             <td className="py-1 pr-2 text-cyan-300">{formatUsd(gl.credit)}</td>
                             <td className="py-1 text-[10px] text-slate-400 truncate max-w-[140px]">
@@ -1058,7 +1086,7 @@ export default function App() {
                         <th className="py-1 pr-2">ON_HAND</th>
                         <th className="py-1 pr-2">RESERVED</th>
                         <th className="py-1 pr-2">AVAILABLE</th>
-                        <th className="py-1">ETAG</th>
+                        <th className="py-1">VERSION</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
@@ -1071,7 +1099,7 @@ export default function App() {
                             {item.available ?? item.on_hand - (item.reserved ?? 0)}
                           </td>
                           <td className="py-1.5 text-[10px] text-slate-400">
-                            {shortHash(item.etag, 12)}
+                            {item.version !== undefined ? `v${String(item.version)}` : shortHash(item.etag, 12)}
                           </td>
                         </tr>
                       ))}

@@ -806,9 +806,12 @@ def api_client() -> httpx.Client:
     and resets all 3 databases to clean seed state before each test.
     """
     if _is_live_backend_up():
-        client = httpx.Client(base_url=BASE_URL, timeout=10.0)
-    else:
+        client = httpx.Client(base_url=BASE_URL, timeout=60.0)
+    elif os.environ.get("ABLATE_ALLOW_FALLBACK") == "1":
+        # Opt-in only: the in-memory simulator is not the real backend, so it proves nothing about it.
         client = httpx.Client(base_url=BASE_URL, transport=_build_fallback_transport(), timeout=10.0)
+    else:
+        pytest.fail(f"Ablate backend not reachable at {BASE_URL}; start it with `python run_all.py`")
 
     client.post(
         "/admin/config",
