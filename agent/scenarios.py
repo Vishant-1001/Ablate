@@ -44,7 +44,13 @@ async def run_act(act: str) -> dict:
     tx_id = eng.begin(untrusted_context=[docs["edi_memo"]])
     eng.emit(tx_id, "AGENT", "ACT_START", f"{act}: agent resolving EDI 856/810 discrepancy", docs)
     await run_agent(eng, tx_id, docs, act)
-    receipt = eng.commit(tx_id)
+    tx = eng.txs.get(tx_id)
+    if tx is not None and not tx.closed:
+        # e.g. a recorded Gemini run from before the agent had a commit tool, or the model skipped it
+        eng.emit(tx_id, "AGENT", "RUNNER_COMMIT", "agent did not commit; the scenario runner committed the tx", {})
+        receipt = eng.commit(tx_id)
+    else:
+        receipt = next(r for r in reversed(eng.ledger.all()) if r["tx_id"] == tx_id)
     return {"act": act, "receipt": receipt, "state": eng.state()}
 
 

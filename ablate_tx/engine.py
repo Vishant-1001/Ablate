@@ -88,10 +88,20 @@ class Engine:
         if tx is None:
             raise ToolError(404, f"unknown tx_id {tx_id}")
         if tx.closed:
-            raise ToolError(409, f"transaction {tx_id} already closed")
+            raise ToolError(409, f"transaction {tx_id} already committed; no further calls are accepted")
         return tx
 
+    # call() and commit() are serialized on DB_LOCK, so a tool call can never interleave with a
+    # commit of the same transaction (an agent may fire both in parallel in one turn).
     def call(self, tx_id: str | None, tool: str, args: dict, tainted_fields: list[str] | None = None) -> dict:
+        with DB_LOCK:
+            return self._call(tx_id, tool, args, tainted_fields)
+
+    def commit(self, tx_id: str) -> dict:
+        with DB_LOCK:
+            return self._commit(tx_id)
+
+    def _call(self, tx_id: str | None, tool: str, args: dict, tainted_fields: list[str] | None = None) -> dict:
         spec = get_spec(tool)
         if spec.internal:
             raise ToolError(403, f"{tool} is an internal compensator and cannot be called directly")
@@ -165,9 +175,10 @@ class Engine:
                 "result": res, "staged": spec.mutating}
 
     def rewind(self, tx_id: str) -> bool:
-        """Drop everything staged so far (agent retry). False if live writes already happened."""
-        tx = self._tx(tx_id)
-        if tx.live_steps:
+        """Drop everything staged so far (agent retry). False if live writes already happened
+        or the agent already committed."""
+        tx = self.txs.get(tx_id)
+        if tx is None or tx.closed or tx.live_steps:
             return False
         if tx.staged:
             self.emit(tx.tx_id, "STAGE", "SHADOW_REWIND", f"discarded {len(tx.staged)} staged call(s) before retry", {})
@@ -176,7 +187,7 @@ class Engine:
         tx.pre_images.clear()
         return True
 
-    def commit(self, tx_id: str) -> dict:
+    def _commit(self, tx_id: str) -> dict:
         tx = self._tx(tx_id)
         t_start = time.perf_counter()
         receipt: dict = {
