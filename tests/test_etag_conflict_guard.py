@@ -21,6 +21,7 @@ def test_wms_commutative_delta_undo_preserves_inventory_math(api_client: httpx.C
     initial_sku = initial_state["wms"]["inventory"][0]
     sku_code = initial_sku["sku"]
     initial_on_hand = int(initial_sku["on_hand"])
+    initial_reserved = int(initial_sku["reserved"])
 
     api_client.post(
         "/admin/config",
@@ -30,14 +31,14 @@ def test_wms_commutative_delta_undo_preserves_inventory_math(api_client: httpx.C
     tx_id = api_client.post("/tx/begin").json()["tx_id"]
     api_client.post(
         "/mcp/call",
-        json={"tx_id": tx_id, "tool": "wms.reserve_inventory", "args": {"sku": sku_code, "qty": 50}},
+        json={"tx_id": tx_id, "tool": "wms.adjust_reservation", "args": {"sku": sku_code, "delta_qty": -50}},
     )
     api_client.post(
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "billing.create_invoice",
-            "args": {"po_id": "PO-1001", "amount_usd": 12500.0},
+            "tool": "billing.issue_credit_note",
+            "args": {"invoice_id": "INV-88", "amount_usd": 5000.0},
         },
     )
 
@@ -51,10 +52,13 @@ def test_wms_commutative_delta_undo_preserves_inventory_math(api_client: httpx.C
     final_state = api_client.get("/state").json()
     final_sku = next(i for i in final_state["wms"]["inventory"] if i["sku"] == sku_code)
     assert int(final_sku["on_hand"]) == initial_on_hand
+    assert int(final_sku["reserved"]) == initial_reserved
+    assert any(c["strategy"] == "DELTA" and c["status"] == "COMPENSATED" for c in receipt["compensations"])
+    assert receipt["hashes_match"] is True
 
 
 def test_erp_etag_mismatch_quarantines_concurrent_human_edit(api_client: httpx.Client) -> None:
-    """When `simulate_human_edit=True` (or a human edits PO-1001 mid-commit), Ablate's Reverse-Saga
+    """When `simulate_human_edit=True` (or a human edits PO-1042 mid-commit), Ablate's Reverse-Saga
     must detect the ETag mismatch, return `QUARANTINED_CONCURRENT_EDIT`, and preserve the human's
     modification rather than overwriting it with pre-transaction state.
     """
@@ -70,9 +74,7 @@ def test_erp_etag_mismatch_quarantines_concurrent_human_edit(api_client: httpx.C
     assert receipt["status"] == "QUARANTINED_CONCURRENT_EDIT"
     # Because the human's edit was preserved on ERP, the post-tx ERP hash differs from pre-tx seed hash
     assert post_state["erp"]["hash"] != pre_erp_hash
-    po_1001 = next(
-        (p for p in post_state["erp"]["purchase_orders"] if p["po_id"] == "PO-1001"),
-        post_state["erp"]["purchase_orders"][0],
-    )
-    # The agent's target status ("FULFILLED") must not have clobbered the human edit
-    assert po_1001["status"] != "APPROVED"
+    po = next(p for p in post_state["erp"]["purchase_orders"] if p["po_id"] == "PO-1042")
+    # The simulated human set qty to 475 after the agent's 450; Ablate must not restore 500 over it
+    assert po["qty"] == 475
+    assert receipt["quarantine"], "expected a 3-way diff for the quarantined PO"

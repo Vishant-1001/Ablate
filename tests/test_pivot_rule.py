@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import httpx
 
+APPROVED_IBAN = "DE89370400440532013000"  # INV-88 vendor master IBAN
+
 
 def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.Client) -> None:
     """Even if an agent invokes `billing.send_wire_payout` (a PIVOT tool) before reversible
@@ -19,7 +21,6 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
     """
     state = api_client.get("/state").json()
     po_id = state["erp"]["purchase_orders"][0]["po_id"]
-    approved_iban = state["erp"]["purchase_orders"][0].get("iban", "DE89370400440532013000")
     sku = state["wms"]["inventory"][0]["sku"]
 
     tx_id = api_client.post("/tx/begin").json()["tx_id"]
@@ -30,7 +31,7 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
         json={
             "tx_id": tx_id,
             "tool": "billing.send_wire_payout",
-            "args": {"po_id": po_id, "amount_usd": 12500.0, "iban": approved_iban},
+            "args": {"invoice_id": "INV-88", "amount_usd": 12500.0, "vendor_iban": APPROVED_IBAN},
         },
     )
     assert r_pivot.status_code == 200
@@ -40,8 +41,8 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "erp.update_purchase_order",
-            "args": {"po_id": po_id, "status": "FULFILLED"},
+            "tool": "erp.update_po_qty",
+            "args": {"po_id": po_id, "new_qty": 450},
         },
     )
     assert r_erp.status_code == 200
@@ -50,8 +51,8 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "wms.reserve_inventory",
-            "args": {"sku": sku, "qty": 10},
+            "tool": "wms.adjust_reservation",
+            "args": {"sku": sku, "delta_qty": -10},
         },
     )
     assert r_wms.status_code == 200
@@ -61,16 +62,10 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
     receipt = commit_resp.json()
 
     assert receipt["status"] == "COMMITTED"
-    # Check commit_order in receipt or events to confirm billing.send_wire_payout executed last
-    commit_order = receipt.get("commit_order")
-    if commit_order:
-        assert commit_order[-1] == "billing.send_wire_payout", (
-            f"Expected PIVOT tool last, got order: {commit_order}"
-        )
-    else:
-        events = api_client.get("/events").json()["events"]
-        tx_events = [e for e in events if e.get("tx_id") == tx_id]
-        assert any("send_wire_payout" in json.dumps(e) for e in tx_events) if "json" in globals() else True
+    commit_order = receipt["commit_order"]
+    assert commit_order[-1] == "billing.send_wire_payout", (
+        f"Expected PIVOT tool last, got order: {commit_order}"
+    )
 
 
 def test_two_pivot_tools_in_one_transaction_rejected_with_pivot_limit_exceeded(
@@ -79,10 +74,6 @@ def test_two_pivot_tools_in_one_transaction_rejected_with_pivot_limit_exceeded(
     """Staging a second PIVOT tool (`billing.send_wire_payout`) in the same transaction
     must be rejected upfront with `PIVOT_LIMIT_EXCEEDED`.
     """
-    state = api_client.get("/state").json()
-    po_id = state["erp"]["purchase_orders"][0]["po_id"]
-    approved_iban = state["erp"]["purchase_orders"][0].get("iban", "DE89370400440532013000")
-
     tx_id = api_client.post("/tx/begin").json()["tx_id"]
 
     first_pivot = api_client.post(
@@ -90,7 +81,7 @@ def test_two_pivot_tools_in_one_transaction_rejected_with_pivot_limit_exceeded(
         json={
             "tx_id": tx_id,
             "tool": "billing.send_wire_payout",
-            "args": {"po_id": po_id, "amount_usd": 5000.0, "iban": approved_iban},
+            "args": {"invoice_id": "INV-88", "amount_usd": 5000.0, "vendor_iban": APPROVED_IBAN},
         },
     )
     assert first_pivot.status_code == 200
@@ -100,7 +91,7 @@ def test_two_pivot_tools_in_one_transaction_rejected_with_pivot_limit_exceeded(
         json={
             "tx_id": tx_id,
             "tool": "billing.send_wire_payout",
-            "args": {"po_id": po_id, "amount_usd": 5000.0, "iban": approved_iban},
+            "args": {"invoice_id": "INV-88", "amount_usd": 5000.0, "vendor_iban": APPROVED_IBAN},
         },
     )
 

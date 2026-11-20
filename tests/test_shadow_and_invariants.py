@@ -29,7 +29,7 @@ def test_read_your_own_writes_and_zero_live_writes_during_staging(api_client: ht
     """
     pre_hashes = _get_live_hashes(api_client)
     pre_state = api_client.get("/state").json()
-    initial_po_status = pre_state["erp"]["purchase_orders"][0]["status"]
+    initial_po_qty = pre_state["erp"]["purchase_orders"][0]["qty"]
     po_id = pre_state["erp"]["purchase_orders"][0]["po_id"]
 
     tx_id = api_client.post("/tx/begin").json()["tx_id"]
@@ -39,8 +39,8 @@ def test_read_your_own_writes_and_zero_live_writes_during_staging(api_client: ht
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "erp.update_purchase_order",
-            "args": {"po_id": po_id, "status": "FULFILLED"},
+            "tool": "erp.update_po_qty",
+            "args": {"po_id": po_id, "new_qty": 450},
         },
     )
     assert stage_resp.status_code == 200
@@ -50,19 +50,19 @@ def test_read_your_own_writes_and_zero_live_writes_during_staging(api_client: ht
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "erp.get_purchase_order",
+            "tool": "erp.get_po",
             "args": {"po_id": po_id},
         },
     )
     assert read_resp.status_code == 200
     read_body = read_resp.json()
-    assert "FULFILLED" in str(read_body)
+    assert read_body["result"]["qty"] == 450
 
     # Verify zero live writes occurred during staging
     mid_hashes = _get_live_hashes(api_client)
     mid_state = api_client.get("/state").json()
     assert mid_hashes == pre_hashes, "Live DB hashes must not change during Shadow Twin staging"
-    assert mid_state["erp"]["purchase_orders"][0]["status"] == initial_po_status
+    assert mid_state["erp"]["purchase_orders"][0]["qty"] == initial_po_qty
 
 
 def test_layer1_ledger_balance_violation_aborts_in_shadow(api_client: httpx.Client) -> None:
@@ -76,9 +76,9 @@ def test_layer1_ledger_balance_violation_aborts_in_shadow(api_client: httpx.Clie
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "erp.post_gl_entry",
+            "tool": "erp.post_gl_adjustment",
             "args": {
-                "account": "2010-AP",
+                "po_id": "PO-1042",
                 "debit": 15000.0,
                 "credit": 9500.0,  # Intentional 5500 USD imbalance
                 "memo": "Unbalanced hallucinated GL posting",
@@ -109,8 +109,8 @@ def test_layer1_negative_inventory_violation_aborts_in_shadow(api_client: httpx.
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "wms.reserve_inventory",
-            "args": {"sku": sku, "qty": 999999},
+            "tool": "wms.adjust_reservation",
+            "args": {"sku": sku, "delta_qty": 999999},
         },
     )
 
@@ -136,8 +136,8 @@ def test_layer2_dollar_cap_exceeded_escalates_to_hitl(api_client: httpx.Client) 
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "billing.create_invoice",
-            "args": {"po_id": "PO-1001", "amount_usd": 75000.0},
+            "tool": "billing.issue_credit_note",
+            "args": {"invoice_id": "INV-88", "amount_usd": 30000.0},
         },
     )
 
@@ -162,9 +162,9 @@ def test_layer3_prompt_injection_taint_and_iban_integrity_abort(api_client: http
         "/mcp/call",
         json={
             "tx_id": tx_id,
-            "tool": "erp.update_purchase_order",
-            "args": {"po_id": "PO-1001", "iban": "RU00999988887777666655"},
-            "tainted_fields": ["iban"],
+            "tool": "billing.send_wire_payout",
+            "args": {"invoice_id": "INV-88", "vendor_iban": "RU00999988887777666655", "amount_usd": 5000.0},
+            "tainted_fields": ["vendor_iban"],
         },
     )
 
