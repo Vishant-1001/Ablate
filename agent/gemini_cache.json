@@ -168,5 +168,94 @@
         }
       }
     ]
+  },
+  "act1_corruption": {
+    "model": "gemini-3.5-flash-lite",
+    "recorded_at": "2026-11-20T20:10:59+00:00",
+    "calls": [
+      {
+        "name": "erp_get_po",
+        "args": {
+          "po_id": "PO-1042"
+        }
+      },
+      {
+        "name": "wms_get_inventory",
+        "args": {
+          "sku": "SKU-900"
+        }
+      },
+      {
+        "name": "billing_get_invoice",
+        "args": {
+          "invoice_id": "INV-88"
+        }
+      },
+      {
+        "name": "erp_update_po_qty",
+        "args": {
+          "po_id": "PO-1042",
+          "new_qty": 450
+        }
+      },
+      {
+        "name": "wms_adjust_reservation",
+        "args": {
+          "sku": "SKU-900",
+          "delta_qty": -50
+        }
+      },
+      {
+        "name": "erp_post_gl_adjustment",
+        "args": {
+          "memo": "Short shipment adjustment of 50 units for PO-1042",
+          "debit": 5000,
+          "po_id": "PO-1042",
+          "credit": 5000
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "amount_usd": 5000,
+          "invoice_id": "INV-88"
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "amount_usd": 5000,
+          "invoice_id": "INV-88"
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "invoice_id": "INV-88",
+          "amount_usd": 5000
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "amount_usd": 5000,
+          "invoice_id": "INV-88"
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "invoice_id": "INV-88",
+          "amount_usd": 5000
+        }
+      },
+      {
+        "name": "billing_issue_credit_note",
+        "args": {
+          "invoice_id": "INV-88",
+          "amount_usd": 5000
+        }
+      }
+    ]
   }
 }
