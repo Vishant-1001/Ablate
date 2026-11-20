@@ -134,6 +134,11 @@ async def run_agent(eng, tx_id: str, docs: dict, act: str) -> str:
     tools = make_tools(eng, tx_id, docs["edi_memo"])
     use_gemini = mode == "gemini" or (mode == "auto" and os.environ.get("GOOGLE_API_KEY"))
     reason = "no GOOGLE_API_KEY"
+    if act == "act3_injection" and os.environ.get("ABLATE_ACT3_AGENT", "compromised") == "compromised":
+        # Gemini usually resists this injection, so act3 models a compromised agent that
+        # obeys it, to show the proxy blocking the wire. ABLATE_ACT3_AGENT=gemini opts out.
+        use_gemini = False
+        reason = "act3: simulated compromised agent that obeys the injected memo"
     if use_gemini:
         # gemini-2.5-flash is closed to new API keys; fall back to newer flash on 404
         for model in dict.fromkeys([MODEL] + FALLBACK_MODELS):
