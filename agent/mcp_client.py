@@ -48,5 +48,9 @@ class AblateMCPClient:
         res = await self._rpc("tools/call", params)
         return res.get("structuredContent") or {"content": res.get("content"), "isError": res.get("isError")}
 
+    async def commit_tx(self) -> dict:
+        """ablate/commit_tx for the bound transaction; returns the sealed TxReceipt."""
+        return await self._rpc("ablate/commit_tx", {"tx_id": self.tx_id})
+
     async def aclose(self) -> None:
         await self._http.aclose()

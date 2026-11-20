@@ -42,7 +42,7 @@ def test_single_pivot_tool_is_sorted_strictly_last_on_commit(api_client: httpx.C
         json={
             "tx_id": tx_id,
             "tool": "erp.update_po_qty",
-            "args": {"po_id": po_id, "new_qty": 450},
+            "args": {"po_id": po_id, "new_qty": 480},
         },
     )
     assert r_erp.status_code == 200

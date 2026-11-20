@@ -60,9 +60,9 @@ class ERPService(BaseService):
         conn.execute("BEGIN")
         conn.execute(
             "UPDATE purchase_orders SET qty=?, version=version+1 WHERE po_id=?",
-            (int(result["new_qty"]) + 25, result["po_id"]),
+            (int(result["new_qty"]) - 10, result["po_id"]),
         )
-        self.audit(conn, "HUMAN_EDIT", {"po_id": result["po_id"], "qty": int(result["new_qty"]) + 25})
+        self.audit(conn, "HUMAN_EDIT", {"po_id": result["po_id"], "qty": int(result["new_qty"]) - 10})
         conn.execute("COMMIT")
 
     def tool_post_gl_adjustment(self, conn, args, live):

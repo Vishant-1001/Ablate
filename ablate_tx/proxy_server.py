@@ -81,6 +81,12 @@ def ledger():
     return {"receipts": get_engine().ledger.all()}
 
 
+@app.get("/ledger/verify")
+def ledger_verify():
+    """Server-side integrity check: re-hashes the whole receipt chain from genesis."""
+    return get_engine().ledger.verify_report()
+
+
 @app.get("/tools")
 def tools():
     return {"tools": public_tools()}

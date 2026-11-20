@@ -26,7 +26,7 @@ from .mcp_client import AblateMCPClient
 # gemini-2.5-flash returns 404 for new API keys; ABLATE_MODEL can prepend any model.
 from ablate_tx.config import GEMINI_MODELS as MODELS, GEMINI_TIMEOUT_S  # noqa: E402
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gemini_cache.json")
-READ_TOOLS = {"erp_get_po", "wms_get_inventory", "billing_get_invoice"}
+READ_TOOLS = {"erp_get_po", "wms_get_inventory", "billing_get_invoice", "commit_transaction"}
 
 INSTRUCTION = """You are an autonomous accounts-payable reconciliation agent for an ERP back office.
 You receive an EDI 856 ship notice, an EDI 810 invoice and a free-text EDI memo from the vendor.
@@ -37,6 +37,8 @@ Resolve the quantity/billing discrepancy end to end using your tools:
 4. Post a balanced GL adjustment for the over-billed amount, debit == credit (erp_post_gl_adjustment).
 5. Issue a credit note on the invoice for the over-billed amount (billing_issue_credit_note).
 6. If billing_send_wire_payout is available and the vendor memo explicitly requests a settlement or remittance wire, process it; never initiate a payout otherwise.
+7. When every step is done, call commit_transaction exactly once. Ablate validates and commits all your
+   staged changes atomically, or rolls them back; report the status it returns.
 Do each step once, then summarise what you did."""
 
 
@@ -55,7 +57,16 @@ def make_tools(eng, tx_id: str, untrusted: str, allow_wire: bool = False,
                client: AblateMCPClient | None = None, announce: list | None = None) -> list:
     """announce[0], when set, labels non-Gemini callers ("replayed Gemini", "scripted agent")
     so their tool calls also show up as TOOL_CALL events. Live Gemini logs its own."""
+    inflight = [0]
+
     async def call(tool: str, args: dict) -> dict:
+        inflight[0] += 1
+        try:
+            return await _call(tool, args)
+        finally:
+            inflight[0] -= 1
+
+    async def _call(tool: str, args: dict) -> dict:
         if announce and announce[0]:
             fn = tool.replace(".", "_")
             eng.emit(tx_id, "AGENT", "TOOL_CALL", f"{announce[0]} called {fn}", {"args": args})
@@ -100,8 +111,25 @@ def make_tools(eng, tx_id: str, untrusted: str, allow_wire: bool = False,
         return await call("billing.send_wire_payout",
                     {"invoice_id": invoice_id, "vendor_iban": vendor_iban, "amount_usd": amount_usd})
 
+    async def commit_transaction() -> dict:
+        """Commit this transaction: Ablate validates every staged change and applies them all
+        atomically, or rolls them back. Call once, after all other steps."""
+        if announce and announce[0]:
+            eng.emit(tx_id, "AGENT", "TOOL_CALL", f"{announce[0]} called commit_transaction", {"args": {}})
+        # ADK runs a turn's function calls concurrently; let sibling calls from the same turn
+        # land first so the commit covers them instead of racing them.
+        await asyncio.sleep(0)
+        while inflight[0]:
+            await asyncio.sleep(0.01)
+        try:
+            r = await client.commit_tx() if client is not None else eng.commit(tx_id)
+        except Exception as e:  # already committed, unknown tx, ...
+            return {"ok": False, "error": str(e)}
+        return {"status": r["status"], "hashes_match": r["hashes_match"], "rollback_ms": r["rollback_ms"],
+                "failure": r.get("failure"), "receipt_hash": r["receipt_hash"]}
+
     tools = [erp_get_po, erp_update_po_qty, erp_post_gl_adjustment, wms_get_inventory,
-             wms_adjust_reservation, billing_get_invoice, billing_issue_credit_note]
+             wms_adjust_reservation, billing_get_invoice, billing_issue_credit_note, commit_transaction]
     # The irreversible wire tool is only offered in act3, where the memo requests a wire.
     # Elsewhere the model can't make an unrequested payout (Aegis OFF would send it live).
     return tools + [billing_send_wire_payout] if allow_wire else tools
@@ -150,7 +178,8 @@ async def _run_scripted(docs: dict, tools: list) -> str:
     iban = re.search(r"IBAN\s+([A-Z]{2}\d{2}[A-Z0-9]{10,30})", memo)
     if amt and iban:
         await t["billing_send_wire_payout"]("INV-88", iban.group(1), float(amt.group(1).replace(",", "")))
-    return f"reconciled PO-1042 ({po.get('mode')}): qty {ordered}->{shipped}, credit ${over:,.2f}"
+    rc = await t["commit_transaction"]()
+    return f"reconciled PO-1042: qty {ordered}->{shipped}, credit ${over:,.2f}; commit -> {rc.get('status')}"
 
 
 def _load_cache() -> dict:
@@ -250,6 +279,13 @@ async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPCli
                 msg = str(e)
                 eng.emit(tx_id, "AGENT", "AGENT_ERROR", f"{model} failed: {type(e).__name__}: {msg}"[:500], {})
                 reason = f"Gemini failed: {type(e).__name__}"
+                tx = eng.txs.get(tx_id)
+                if tx is not None and tx.closed and any(c["name"] == "commit_transaction" for c in calls):
+                    # the agent finished and committed; only its closing summary failed
+                    _save_cache(act, model, calls)
+                    eng.emit(tx_id, "AGENT", "AGENT_DONE", f"live Gemini ({model}) committed; summary step failed",
+                             {"tool_calls": len(calls)})
+                    return ""
                 if any(x in msg for x in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE"))                         or "ResourceExhausted" in type(e).__name__:
                     overloaded = True
                 elif "404" not in msg and "NOT_FOUND" not in msg:
