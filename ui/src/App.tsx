@@ -650,14 +650,18 @@ export default function App() {
               </div>
               <div className="grid grid-cols-1 gap-1.5">
                 {INVARIANT_META.map((inv) => {
+                  // No result for this check on the latest receipt (e.g. Aegis OFF): it never ran.
+                  const skipped = !!latestReceipt && activeInvariants[inv.key] === undefined;
                   const passed = activeInvariants[inv.key] !== false;
                   return (
                     <div
                       key={inv.key}
                       className={`px-2.5 py-1.5 rounded border flex items-center justify-between ${
-                        passed
-                          ? 'bg-emerald-950/25 border-emerald-800/60 text-emerald-200'
-                          : 'bg-rose-950/40 border-rose-700 text-rose-200'
+                        skipped
+                          ? 'bg-slate-900/60 border-slate-700 text-slate-400'
+                          : passed
+                            ? 'bg-emerald-950/25 border-emerald-800/60 text-emerald-200'
+                            : 'bg-rose-950/40 border-rose-700 text-rose-200'
                       }`}
                     >
                       <div className="flex flex-col">
@@ -671,12 +675,14 @@ export default function App() {
                       </div>
                       <span
                         className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                          passed
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-rose-500/30 text-rose-200'
+                          skipped
+                            ? 'bg-slate-700/40 text-slate-400'
+                            : passed
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-rose-500/30 text-rose-200'
                         }`}
                       >
-                        {passed ? 'PASS' : 'VIOLATION'}
+                        {skipped ? 'SKIPPED' : passed ? 'PASS' : 'VIOLATION'}
                       </span>
                     </div>
                   );
