@@ -75,12 +75,41 @@ const ACTS: Array<{ id: DemoAct; n: number; title: string; setup: string; expect
 
 // ============================================================================
 
+// Hash routes make every page and case file linkable, refreshable and Back-able:
+// #/overview  #/mission  #/transactions  #/assurance  #/evidence  #/tx/<id>  #/tx/<id>/evidence
+type Route = { page: Page; tx: string | null };
+const PAGES: Page[] = ['overview', 'mission', 'transactions', 'case', 'evidence', 'assurance'];
+function parseRoute(hash: string): Route {
+  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  if (parts[0] === 'tx' && parts[1]) return { page: parts[2] === 'evidence' ? 'evidence' : 'case', tx: parts[1] };
+  const page = (PAGES as string[]).includes(parts[0]) ? (parts[0] as Page) : 'overview';
+  return { page, tx: null };
+}
+function routeHash(page: Page, tx: string | null): string {
+  if (tx && page === 'case') return `#/tx/${tx}`;
+  if (tx && page === 'evidence') return `#/tx/${tx}/evidence`;
+  return `#/${page}`;
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>('overview');
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setRoute(parseRoute(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const go = useCallback((page: Page, tx: string | null = null) => {
+    const h = routeHash(page, tx);
+    if (window.location.hash !== h) window.location.hash = h; // pushes a history entry
+    else setRoute(parseRoute(h));
+    window.scrollTo(0, 0);
+  }, []);
+  const page = route.page;
+  const selectedTx = route.tx;
+  const setPage = (p: Page) => go(p, p === 'case' || p === 'evidence' ? selectedTx : null);
   const [state, setState] = useState<StatePayload | null>(null);
   const [events, setEvents] = useState<ProxyEvent[]>([]);
   const [receipts, setReceipts] = useState<TxReceipt[]>([]);
-  const [selectedTx, setSelectedTx] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -158,8 +187,8 @@ export default function App() {
     try {
       const data = (await post(`/demo/run/${act}`)) as { receipt: TxReceipt };
       await refresh();
-      setSelectedTx(data.receipt.tx_id);
-      setPage((p) => (p === 'mission' ? p : 'case')); // stay on the live split-screen
+      // stay on the live split-screen; elsewhere open the new case file
+      if (parseRoute(window.location.hash).page !== 'mission') go('case', data.receipt.tx_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -189,10 +218,7 @@ export default function App() {
     }
   };
 
-  const openTx = (txId: string) => {
-    setSelectedTx(txId);
-    setPage('case');
-  };
+  const openTx = (txId: string) => go('case', txId);
 
   const latest = receipts.length ? receipts[receipts.length - 1] : null;
   const selected = receipts.find((r) => r.tx_id === selectedTx) ?? latest;
@@ -273,9 +299,9 @@ export default function App() {
         )}
         {page === 'transactions' && <Transactions receipts={receipts} config={config} onOpen={openTx} onRun={() => setPage('overview')} />}
         {page === 'case' && (
-          <CaseFile receipt={selected} receipts={receipts} events={events} onBack={() => setPage('transactions')} onEvidence={() => setPage('evidence')} />
+          <CaseFile receipt={selected} receipts={receipts} events={events} onBack={() => setPage('transactions')} onEvidence={() => go('evidence', selected?.tx_id ?? null)} />
         )}
-        {page === 'evidence' && <Evidence receipt={selected} events={events} state={state} onBack={() => setPage('case')} />}
+        {page === 'evidence' && <Evidence receipt={selected} events={events} state={state} onBack={() => go('case', selected?.tx_id ?? null)} />}
         {page === 'assurance' && <Assurance receipts={receipts} onOpen={openTx} />}
       </main>
 
@@ -392,7 +418,10 @@ function Overview(props: {
                   <div className="mt-1 text-[16px] font-semibold">{a.title}</div>
                   <div className="mt-1 flex-1 text-[13px] leading-snug text-muted">{a.setup}</div>
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold tracking-[0.04em] ${ev.pill}`}>{ev.label}</span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted">
+                      expect
+                      <span className={`rounded-full px-2.5 py-1 font-bold tracking-[0.04em] ${ev.pill}`}>{ev.label}</span>
+                    </span>
                     <button
                       onClick={() => props.onRun(a.id)}
                       disabled={!!running}
@@ -560,6 +589,7 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
   const v = verdictOf(receipt.status);
   const txEvents = events.filter((e) => e.tx_id === receipt.tx_id);
   const agentMode = txEvents.filter((e) => e.type === 'AGENT_MODE').pop();
+  const agentInfo = (receipt.agent ?? (agentMode?.data as { mode?: string; model?: string } | undefined)) || null;
   const staged = txEvents.filter((e) => e.type === 'SHADOW_WRITE');
   const idx = receipts.findIndex((r) => r.receipt_hash === receipt.receipt_hash);
   const linked = idx <= 0 ? receipt.prev_hash === '0'.repeat(64) : receipts[idx - 1].receipt_hash === receipt.prev_hash;
@@ -576,7 +606,14 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
       receipt.status !== 'ABORTED_IN_SHADOW' && receipt.status !== 'ESCALATED_HITL' ? true : receipt.hashes_match,
       receipt.status === 'ABORTED_IN_SHADOW' || receipt.status === 'ESCALATED_HITL' ? 'Zero live writes (post hash == pre hash)' : 'Validation ran before any live write',
     ],
-    [comps.every((c) => c.status === 'COMPENSATED') || comps.length === 0, comps.length ? `${comps.filter((c) => c.status === 'COMPENSATED').length}/${comps.length} compensations applied` : 'No compensation needed'],
+    [
+      comps.every((c) => c.status === 'COMPENSATED' || c.status === 'QUARANTINED_CONCURRENT_EDIT'),
+      !comps.length
+        ? 'No compensation needed'
+        : comps.some((c) => c.status === 'QUARANTINED_CONCURRENT_EDIT')
+          ? `${comps.filter((c) => c.status === 'COMPENSATED').length} undone · ${comps.filter((c) => c.status === 'QUARANTINED_CONCURRENT_EDIT').length} quarantined (human edit kept)`
+          : `${comps.filter((c) => c.status === 'COMPENSATED').length}/${comps.length} compensations applied`,
+    ],
     [receipt.status === 'ROLLED_BACK_CLEANLY' ? receipt.hashes_match : true, receipt.status === 'ROLLED_BACK_CLEANLY' ? 'Post-rollback hash == pre-transaction hash' : 'Deterministic checks, no LLM judge'],
     [linked, 'Receipt hash-chained to the previous receipt'],
   ];
@@ -593,10 +630,10 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
 
       <Card className="mt-3">
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
             <span className={`rounded-lg px-4 py-2.5 text-[18px] font-bold tracking-[0.04em] ${v.block}`}>{v.label}</span>
-            <div>
-              <div className="text-[22px] font-bold">
+            <div className="min-w-0">
+              <div className="break-all text-[22px] font-bold">
                 <span className="font-mono text-[20px]">{receipt.tx_id}</span> · {receipt.aegis_enabled ? 'Ablate ON' : 'Ablate OFF'}
               </div>
               <div className="text-[14px] text-muted">{v.line}</div>
@@ -610,7 +647,7 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
       </Card>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Card title="Commit plan" aside="COMPENSABLE first → PIVOT last · undone in reverse on fault">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-[14px]">
@@ -741,9 +778,9 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
           <Card>
             <dl className="grid grid-cols-2 gap-y-2 px-5 py-4 text-[14px]">
               <dt className="text-muted">Agent</dt>
-              <dd>{agentMode ? String((agentMode.data as Record<string, unknown>).mode ?? '').replace('_', ' ') : '—'}</dd>
+              <dd>{agentInfo?.mode ? String(agentInfo.mode).replace('_', ' ') : '—'}</dd>
               <dt className="text-muted">Model</dt>
-              <dd className="font-mono text-[12px]">{agentMode ? String((agentMode.data as Record<string, unknown>).model ?? '—') : '—'}</dd>
+              <dd className="font-mono text-[12px]">{agentInfo?.model ? String(agentInfo.model) : '—'}</dd>
               <dt className="text-muted">Steps applied</dt>
               <dd>{applied}</dd>
               <dt className="text-muted">Compensations</dt>

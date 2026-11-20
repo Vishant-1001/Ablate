@@ -42,6 +42,7 @@ class Transaction:
     live_failure: dict | None = None
     pre_tx_hashes: dict[str, str] = field(default_factory=dict)
     closed: bool = False
+    agent: dict | None = None  # who drove the tx: {mode, model}, from the latest AGENT_MODE event
 
 
 def new_tx_id() -> str:

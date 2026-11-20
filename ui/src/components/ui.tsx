@@ -10,6 +10,7 @@ export const INVARIANT_META: Record<string, { label: string; layer: string; desc
   iban_integrity: { label: 'IBAN integrity', layer: 'L1', desc: 'Payout IBAN matches vendor master data' },
   provenance_taint: { label: 'Provenance taint', layer: 'L2', desc: 'No money or IBAN field sourced from untrusted EDI text' },
   dry_run: { label: 'Native dry-run', layer: 'L3', desc: 'Live APIs accept the call with dry_run=true' },
+  aegis_disabled: { label: 'Gate skipped: Ablate OFF', layer: '—', desc: 'No shadow twin, no checks, no rollback' },
 };
 
 // ---------- verdict styling (mockup: red BLOCK block, pill badges) ----------
@@ -72,7 +73,7 @@ export function Pill({ tone, children }: { tone: 'red' | 'green' | 'amber' | 'sl
 
 export function Card({ title, aside, children, className = '' }: { title?: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-xl border border-line bg-white ${className}`}>
+    <section className={`min-w-0 rounded-xl border border-line bg-white ${className}`}>
       {title && (
         <div className="flex items-baseline justify-between gap-4 px-5 pt-4 pb-3">
           <h2 className="text-[17px] font-bold text-ink">{title}</h2>

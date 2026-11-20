@@ -40,6 +40,8 @@ class Engine:
 
     # -- events / config / state --------------------------------------
     def emit(self, tx_id: str, phase: str, type_: str, message: str, data: dict | None = None) -> None:
+        if type_ == "AGENT_MODE" and tx_id in self.txs and data:
+            self.txs[tx_id].agent = {k: data[k] for k in ("mode", "model", "recorded_at") if k in data}
         with self._ev_lock:
             self.events.append({"ts": _now(), "tx_id": tx_id or "", "phase": phase, "type": type_,
                                 "message": message, "data": data or {}})
@@ -194,7 +196,7 @@ class Engine:
             "tx_id": tx.tx_id, "ts": _now(), "aegis_enabled": tx.aegis, "status": None,
             "invariants": {}, "invariant_checks": [], "commit_order": [], "pre_tx_hashes": tx.pre_tx_hashes, "post_tx_hashes": {},
             "hashes_match": None, "rollback_ms": None, "compensations": [], "steps": [],
-            "failure": None, "quarantine": [],
+            "failure": None, "quarantine": [], "agent": tx.agent,
         }
         with DB_LOCK:
             try:

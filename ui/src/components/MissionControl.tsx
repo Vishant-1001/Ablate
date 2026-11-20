@@ -63,6 +63,9 @@ export default function MissionControl(props: {
           </button>
         ))}
         <span className="ml-auto font-mono text-[12px] text-muted">{txId ?? 'no transaction'}</span>
+        <p className="basis-full text-[12px] text-muted">
+          Each act resets the 3 databases and applies its own settings; the toggles show the settings the last run used.
+        </p>
       </div>
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1fr_1.15fr_1.15fr]">
         <div className="flex min-h-[420px] lg:min-h-0">
