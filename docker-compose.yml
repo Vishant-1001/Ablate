@@ -1,0 +1,41 @@
+# Ablate: proxy + 3 SQLite services (one container) and the Mission Control UI.
+#   docker compose up --build
+#   UI  -> http://localhost:5173      API -> http://localhost:8000
+# Set GOOGLE_API_KEY in your shell (or a .env file next to this one) for live Gemini;
+# without it the agent replays recorded real Gemini runs (USE_GEMINI_CACHE=1).
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      ABLATE_DATA_DIR: /app/data
+      USE_GEMINI_CACHE: "${USE_GEMINI_CACHE:-1}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+    volumes:
+      - ablate-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  ui:
+    image: node:20-alpine
+    working_dir: /ui
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./ui:/ui
+      - ui-node-modules:/ui/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  ablate-data:
+  ui-node-modules:

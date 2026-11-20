@@ -5,6 +5,8 @@ import threading
 
 from services.common import canonical_json, sha256_hex
 
+from .models import TxReceipt
+
 GENESIS = "0" * 64
 
 
@@ -20,6 +22,7 @@ class Ledger:
             body["prev_hash"] = prev
             body["receipt_hash"] = sha256_hex(prev + canonical_json(
                 {k: v for k, v in body.items() if k != "receipt_hash"}))
+            TxReceipt.model_validate(body)  # shape check before sealing
             self._receipts.append(body)
             return body
 

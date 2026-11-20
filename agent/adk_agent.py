@@ -1,5 +1,9 @@
-"""Google ADK + Gemini 2.5 Flash agent that reconciles EDI 856/810 discrepancies
-by calling MCP tools through the Ablate proxy engine.
+"""Google ADK + Gemini agent that reconciles EDI 856/810 discrepancies by calling MCP
+tools through the Ablate proxy.
+
+Transport (ABLATE_AGENT_TRANSPORT): "http" (default) sends every tool call as an MCP
+JSON-RPC tools/call to POST /mcp, with the tx bound by the Mcp-Session-Id header;
+"inproc" calls the engine directly (no network; used when no server is listening).
 
 Mode selection (ABLATE_AGENT_MODE): "gemini" | "scripted" | "auto" (default).
 "auto" uses Gemini when GOOGLE_API_KEY is set and google-adk imports, otherwise
@@ -17,9 +21,10 @@ import uuid
 
 from services.common import ToolError
 
+from .mcp_client import AblateMCPClient
+
 # gemini-2.5-flash returns 404 for new API keys; ABLATE_MODEL can prepend any model.
-MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
-GEMINI_TIMEOUT_S = float(os.environ.get("ABLATE_GEMINI_TIMEOUT_S", "30"))
+from ablate_tx.config import GEMINI_MODELS as MODELS, GEMINI_TIMEOUT_S  # noqa: E402
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gemini_cache.json")
 READ_TOOLS = {"erp_get_po", "wms_get_inventory", "billing_get_invoice"}
 
@@ -46,44 +51,53 @@ def _tainted(args: dict, untrusted: str) -> list[str]:
     return out
 
 
-def make_tools(eng, tx_id: str, untrusted: str, allow_wire: bool = False) -> list:
-    def call(tool: str, args: dict) -> dict:
+def make_tools(eng, tx_id: str, untrusted: str, allow_wire: bool = False,
+               client: AblateMCPClient | None = None, announce: list | None = None) -> list:
+    """announce[0], when set, labels non-Gemini callers ("replayed Gemini", "scripted agent")
+    so their tool calls also show up as TOOL_CALL events. Live Gemini logs its own."""
+    async def call(tool: str, args: dict) -> dict:
+        if announce and announce[0]:
+            fn = tool.replace(".", "_")
+            eng.emit(tx_id, "AGENT", "TOOL_CALL", f"{announce[0]} called {fn}", {"args": args})
+        tainted = _tainted(args, untrusted)
+        if client is not None:  # MCP JSON-RPC over HTTP
+            return await client.call_tool(tool, args, tainted)
         try:
-            return eng.call(tx_id, tool, args, _tainted(args, untrusted))
+            return eng.call(tx_id, tool, args, tainted)
         except ToolError as e:
             return {"ok": False, "error": e.to_dict()}
 
-    def erp_get_po(po_id: str) -> dict:
+    async def erp_get_po(po_id: str) -> dict:
         """Read a purchase order from the ERP."""
-        return call("erp.get_po", {"po_id": po_id})
+        return await call("erp.get_po", {"po_id": po_id})
 
-    def erp_update_po_qty(po_id: str, new_qty: int) -> dict:
+    async def erp_update_po_qty(po_id: str, new_qty: int) -> dict:
         """Change the ordered quantity on a purchase order."""
-        return call("erp.update_po_qty", {"po_id": po_id, "new_qty": new_qty})
+        return await call("erp.update_po_qty", {"po_id": po_id, "new_qty": new_qty})
 
-    def erp_post_gl_adjustment(po_id: str, debit: float, credit: float, memo: str) -> dict:
+    async def erp_post_gl_adjustment(po_id: str, debit: float, credit: float, memo: str) -> dict:
         """Post a general-ledger adjustment against a PO. debit must equal credit."""
-        return call("erp.post_gl_adjustment", {"po_id": po_id, "debit": debit, "credit": credit, "memo": memo})
+        return await call("erp.post_gl_adjustment", {"po_id": po_id, "debit": debit, "credit": credit, "memo": memo})
 
-    def wms_get_inventory(sku: str) -> dict:
+    async def wms_get_inventory(sku: str) -> dict:
         """Read on_hand / reserved inventory for a SKU."""
-        return call("wms.get_inventory", {"sku": sku})
+        return await call("wms.get_inventory", {"sku": sku})
 
-    def wms_adjust_reservation(sku: str, delta_qty: int) -> dict:
+    async def wms_adjust_reservation(sku: str, delta_qty: int) -> dict:
         """Change reserved units for a SKU by delta_qty (negative releases units)."""
-        return call("wms.adjust_reservation", {"sku": sku, "delta_qty": delta_qty})
+        return await call("wms.adjust_reservation", {"sku": sku, "delta_qty": delta_qty})
 
-    def billing_get_invoice(invoice_id: str) -> dict:
+    async def billing_get_invoice(invoice_id: str) -> dict:
         """Read an invoice."""
-        return call("billing.get_invoice", {"invoice_id": invoice_id})
+        return await call("billing.get_invoice", {"invoice_id": invoice_id})
 
-    def billing_issue_credit_note(invoice_id: str, amount_usd: float) -> dict:
+    async def billing_issue_credit_note(invoice_id: str, amount_usd: float) -> dict:
         """Issue a credit note against an invoice."""
-        return call("billing.issue_credit_note", {"invoice_id": invoice_id, "amount_usd": amount_usd})
+        return await call("billing.issue_credit_note", {"invoice_id": invoice_id, "amount_usd": amount_usd})
 
-    def billing_send_wire_payout(invoice_id: str, vendor_iban: str, amount_usd: float) -> dict:
+    async def billing_send_wire_payout(invoice_id: str, vendor_iban: str, amount_usd: float) -> dict:
         """Send a wire payout to a vendor IBAN. Irreversible."""
-        return call("billing.send_wire_payout",
+        return await call("billing.send_wire_payout",
                     {"invoice_id": invoice_id, "vendor_iban": vendor_iban, "amount_usd": amount_usd})
 
     tools = [erp_get_po, erp_update_po_qty, erp_post_gl_adjustment, wms_get_inventory,
@@ -115,7 +129,7 @@ async def _run_gemini(eng, tx_id: str, docs: dict, tools: list, model: str, call
     return final
 
 
-def _run_scripted(docs: dict, tools: list) -> str:
+async def _run_scripted(docs: dict, tools: list) -> str:
     """Deterministic agent: parses the EDI docs and issues the same tool calls a
     well-behaved LLM would; for the poisoned memo it also obeys the injection
     (modelling a compromised model) so the proxy's defence is exercised."""
@@ -124,18 +138,18 @@ def _run_scripted(docs: dict, tools: list) -> str:
     shipped = int(re.search(r"qty_shipped=(\d+)", asn).group(1))
     ordered = int(re.search(r"qty_ordered=(\d+)", asn).group(1))
     price = float(re.search(r"unit_price=([\d.]+)", inv).group(1))
-    po = t["erp_get_po"]("PO-1042")
-    t["wms_get_inventory"]("SKU-900")
-    t["billing_get_invoice"]("INV-88")
+    po = await t["erp_get_po"]("PO-1042")
+    await t["wms_get_inventory"]("SKU-900")
+    await t["billing_get_invoice"]("INV-88")
     over = (ordered - shipped) * price
-    t["erp_update_po_qty"]("PO-1042", shipped)
-    t["wms_adjust_reservation"]("SKU-900", -(ordered - shipped))
-    t["erp_post_gl_adjustment"]("PO-1042", over, over, f"Short-ship ASN-7781: {ordered - shipped} units")
-    t["billing_issue_credit_note"]("INV-88", over)
+    await t["erp_update_po_qty"]("PO-1042", shipped)
+    await t["wms_adjust_reservation"]("SKU-900", -(ordered - shipped))
+    await t["erp_post_gl_adjustment"]("PO-1042", over, over, f"Short-ship ASN-7781: {ordered - shipped} units")
+    await t["billing_issue_credit_note"]("INV-88", over)
     amt = re.search(r"\$([\d,]+)[^.]*?wire", memo, re.I)
     iban = re.search(r"IBAN\s+([A-Z]{2}\d{2}[A-Z0-9]{10,30})", memo)
     if amt and iban:
-        t["billing_send_wire_payout"]("INV-88", iban.group(1), float(amt.group(1).replace(",", "")))
+        await t["billing_send_wire_payout"]("INV-88", iban.group(1), float(amt.group(1).replace(",", "")))
     return f"reconciled PO-1042 ({po.get('mode')}): qty {ordered}->{shipped}, credit ${over:,.2f}"
 
 
@@ -155,10 +169,10 @@ def _save_cache(act: str, model: str, calls: list[dict]) -> None:
         json.dump(cache, f, indent=2)
 
 
-def _replay(tools: list, calls: list[dict]) -> None:
+async def _replay(tools: list, calls: list[dict]) -> None:
     t = {f.__name__: f for f in tools}
     for c in calls:
-        t[c["name"]](**c["args"])
+        await t[c["name"]](**c["args"])
 
 
 def _finished(eng, tx_id: str) -> bool:
@@ -168,23 +182,49 @@ def _finished(eng, tx_id: str) -> bool:
 
 
 async def run_agent(eng, tx_id: str, docs: dict, act: str) -> str:
+    client = None
+    if os.environ.get("ABLATE_AGENT_TRANSPORT", "http").lower() == "http":
+        client = AblateMCPClient(tx_id)
+        try:
+            info = await client.initialize()
+            n_tools = len(await client.list_tools())
+            eng.emit(tx_id, "AGENT", "MCP_CONNECTED",
+                     f"agent connected over MCP JSON-RPC to {client.url} ({info['serverInfo']['name']}, "
+                     f"protocol {info['protocolVersion']}, {n_tools} tools)",
+                     {"url": client.url, "protocol": info["protocolVersion"], "tools": n_tools})
+        except Exception as e:  # no server listening (e.g. engine used as a library)
+            await client.aclose()
+            client = None
+            eng.emit(tx_id, "AGENT", "MCP_UNAVAILABLE", f"MCP endpoint unreachable ({type(e).__name__}); "
+                     "calling the engine in-process", {})
+    try:
+        return await _run_agent(eng, tx_id, docs, act, client)
+    finally:
+        if client is not None:
+            await client.aclose()
+
+
+async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPClient | None) -> str:
     mode = os.environ.get("ABLATE_AGENT_MODE", "auto").lower()
-    tools = make_tools(eng, tx_id, docs["edi_memo"], allow_wire=(act == "act3_injection"))
+    announce: list = [None]
+    tools = make_tools(eng, tx_id, docs["edi_memo"], allow_wire=(act == "act3_injection"), client=client,
+                       announce=announce)
     use_gemini = mode == "gemini" or (mode == "auto" and bool(os.environ.get("GOOGLE_API_KEY")))
     use_cache = os.environ.get("USE_GEMINI_CACHE") == "1"
     cached = _load_cache().get(act)
 
-    def replay_cache(why: str) -> str:
+    async def replay_cache(why: str) -> str:
         eng.emit(tx_id, "AGENT", "AGENT_MODE",
                  f"cached_gemini: replaying {len(cached['calls'])} real {cached['model']} tool calls "
                  f"recorded {cached['recorded_at']} ({why})",
                  {"mode": "cached_gemini", "model": cached["model"], "recorded_at": cached["recorded_at"]})
-        _replay(tools, cached["calls"])
+        announce[0] = "Replayed Gemini"
+        await _replay(tools, cached["calls"])
         eng.emit(tx_id, "AGENT", "AGENT_DONE", "cached Gemini trajectory replayed", {})
         return ""
 
     if use_cache and cached:
-        return replay_cache("USE_GEMINI_CACHE=1")
+        return await replay_cache("USE_GEMINI_CACHE=1")
 
     reason = "no GOOGLE_API_KEY"
     overloaded = False
@@ -226,9 +266,10 @@ async def run_agent(eng, tx_id: str, docs: dict, act: str) -> str:
             eng.emit(tx_id, "AGENT", "AGENT_DONE", "Gemini attempt already wrote live; not re-running", {})
             return ""
         if overloaded and cached:
-            return replay_cache(reason)
+            return await replay_cache(reason)
     eng.emit(tx_id, "AGENT", "AGENT_MODE", f"scripted_fallback: deterministic agent ({reason})",
              {"mode": "scripted_fallback"})
-    out = _run_scripted(docs, tools)
+    announce[0] = "Scripted agent"
+    out = await _run_scripted(docs, tools)
     eng.emit(tx_id, "AGENT", "AGENT_DONE", out, {})
     return out

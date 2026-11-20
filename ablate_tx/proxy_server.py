@@ -1,20 +1,25 @@
 """Ablate proxy HTTP API (frozen contract, port 8000)."""
 from __future__ import annotations
 
-from typing import Optional
+import asyncio
+import json
+from typing import Any, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from services.common import ToolError
 
+from . import mcp_jsonrpc as mcp
 from .engine import get_engine
 from .registry import public_tools
 
 app = FastAPI(title="Ablate Transactional MCP Proxy", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+                   expose_headers=["Mcp-Session-Id"])
 
 ACTS = ("act1_corruption", "act2_rollback", "act3_injection", "act4_etag_conflict")
 
@@ -94,6 +99,62 @@ def mcp_call(body: McpCall):
 @app.post("/tx/commit")
 def tx_commit(body: TxBody):
     return get_engine().commit(body.tx_id)
+
+
+@app.post("/mcp")
+async def mcp_jsonrpc(request: Request, mcp_session_id: Optional[str] = Header(None)):
+    """MCP JSON-RPC 2.0 endpoint (single message or batch). Mcp-Session-Id = tx_id."""
+    eng = get_engine()
+    try:
+        body: Any = json.loads(await request.body())
+    except ValueError:
+        return JSONResponse(status_code=400, content=mcp._err(None, mcp.PARSE_ERROR, "Parse error"))
+
+    def run() -> Any:
+        if isinstance(body, list):
+            if not body:
+                return mcp._err(None, mcp.INVALID_REQUEST, "empty batch")
+            return [r for r in (mcp.handle(eng, m, mcp_session_id) for m in body) if r is not None] or None
+        return mcp.handle(eng, body, mcp_session_id)
+
+    resp = await run_in_threadpool(run)  # engine + SQLite are blocking; keep the event loop free
+    return Response(status_code=202) if resp is None else JSONResponse(content=resp)
+
+
+@app.get("/events/stream")
+async def events_stream(request: Request):
+    """Server-Sent Events: replays the current event log, then pushes each new event as it
+    is emitted. Sends `event: reset` when the log is cleared by /admin/reset."""
+    eng = get_engine()
+
+    async def gen():
+        sent, idle = 0, 0.0
+        yield "retry: 2000\n\n"
+        while not await request.is_disconnected():
+            evs = eng.events
+            if len(evs) < sent:  # log was cleared by a reset
+                sent = 0
+                yield "event: reset\ndata: {}\n\n"
+            if len(evs) > sent:
+                for e in list(evs[sent:]):
+                    yield f"event: proxy\ndata: {json.dumps(e, default=str)}\n\n"
+                sent, idle = len(evs), 0.0
+            elif idle >= 15:
+                yield ": keep-alive\n\n"
+                idle = 0.0
+            await asyncio.sleep(0.15)
+            idle += 0.15
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/bench/run")
+async def bench_run():
+    """Run the 10-case AegisBench-MCP (deterministic, no LLM). Resets the DBs when done."""
+    from agent.scenarios import bench_table, run_bench
+    report = await run_in_threadpool(run_bench)
+    return {**report, "markdown": bench_table(report)}
 
 
 @app.post("/demo/run/{act}")
