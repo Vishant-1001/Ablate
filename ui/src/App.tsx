@@ -149,25 +149,57 @@ export default function App() {
       window.clearTimeout(debounce);
       debounce = window.setTimeout(() => void refresh(), 200);
     };
-    const es = new EventSource(`${API_BASE}/events/stream`);
-    es.onopen = () => {
-      setStreaming(true);
-      setEvents([]); // the server replays the full log on every (re)connect
+    let es: EventSource | null = null;
+    let live = false;
+    let retry: number | undefined;
+    let stopped = false;
+    const connect = () => {
+      es = new EventSource(`${API_BASE}/events/stream`);
+      es.onopen = () => {
+        live = true;
+        setStreaming(true);
+        setEvents([]); // the server replays the full log on every (re)connect
+      };
+      es.onerror = () => {
+        live = false;
+        setStreaming(false);
+        // A non-200 answer (e.g. Cloud Run waking a new revision) closes an EventSource for good;
+        // the browser only auto-retries network drops. Reopen it ourselves.
+        if (es && es.readyState === EventSource.CLOSED && !stopped) {
+          es.close();
+          window.clearTimeout(retry);
+          retry = window.setTimeout(connect, 2000);
+        }
+      };
+      es.addEventListener('proxy', (m) => {
+        setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
+        soon();
+      });
+      es.addEventListener('reset', () => {
+        setEvents([]);
+        soon();
+      });
     };
-    es.onerror = () => setStreaming(false); // EventSource reconnects on its own
-    es.addEventListener('proxy', (m) => {
-      setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
-      soon();
-    });
-    es.addEventListener('reset', () => {
-      setEvents([]);
-      soon();
-    });
+    connect();
+    // While the stream is down, poll /events so the panes never go stale.
+    const pollEvents = async () => {
+      if (live) return;
+      try {
+        const r = await fetch(`${API_BASE}/events`);
+        if (r.ok) setEvents(((await r.json()) as { events?: ProxyEvent[] }).events ?? []);
+      } catch {
+        /* offline banner covers this */
+      }
+    };
+    const fast = window.setInterval(() => void pollEvents(), 1000);
     const t = window.setInterval(() => void refresh(), 5000);
     return () => {
-      es.close();
+      stopped = true;
+      es?.close();
       window.clearInterval(t);
+      window.clearInterval(fast);
       window.clearTimeout(debounce);
+      window.clearTimeout(retry);
     };
   }, [refresh]);
 
