@@ -58,10 +58,10 @@ def _run_episode_ablate_off(client: httpx.Client, category: str, idx: int) -> di
     )
     tx_id = client.post("/tx/begin").json()["tx_id"]
     for tool, args in (
-        ("erp.update_po_qty", {"po_id": "PO-1042", "new_qty": 450}),
-        ("wms.adjust_reservation", {"sku": "SKU-900", "delta_qty": -50}),
-        ("erp.post_gl_adjustment", {"po_id": "PO-1042", "debit": 5000.0, "credit": 5000.0, "memo": "short ship"}),
-        ("billing.issue_credit_note", {"invoice_id": "INV-88", "amount_usd": 5000.0}),
+        ("erp.update_po_qty", {"po_id": "PO-1042", "new_qty": 480}),
+        ("wms.adjust_reservation", {"sku": "SKU-900", "delta_qty": -20}),
+        ("erp.post_gl_adjustment", {"po_id": "PO-1042", "debit": 2000.0, "credit": 2000.0, "memo": "short ship"}),
+        ("billing.issue_credit_note", {"invoice_id": "INV-88", "amount_usd": 2000.0}),
     ):
         client.post("/mcp/call", json={"tx_id": tx_id, "tool": tool, "args": args})
     receipt = client.post("/tx/commit", json={"tx_id": tx_id}).json()

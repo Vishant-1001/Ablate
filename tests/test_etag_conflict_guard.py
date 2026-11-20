@@ -13,7 +13,7 @@ import httpx
 
 
 def test_wms_commutative_delta_undo_preserves_inventory_math(api_client: httpx.Client) -> None:
-    """When a transaction deducts 50 units from WMS inventory and subsequently rolls back due to
+    """When a transaction releases 20 units from WMS inventory and subsequently rolls back due to
     a Billing 409 fault, Ablate's compensation applies an inverse commutative delta (+50) rather
     than an unsafe blind table drop.
     """
@@ -31,14 +31,14 @@ def test_wms_commutative_delta_undo_preserves_inventory_math(api_client: httpx.C
     tx_id = api_client.post("/tx/begin").json()["tx_id"]
     api_client.post(
         "/mcp/call",
-        json={"tx_id": tx_id, "tool": "wms.adjust_reservation", "args": {"sku": sku_code, "delta_qty": -50}},
+        json={"tx_id": tx_id, "tool": "wms.adjust_reservation", "args": {"sku": sku_code, "delta_qty": -20}},
     )
     api_client.post(
         "/mcp/call",
         json={
             "tx_id": tx_id,
             "tool": "billing.issue_credit_note",
-            "args": {"invoice_id": "INV-88", "amount_usd": 5000.0},
+            "args": {"invoice_id": "INV-88", "amount_usd": 2000.0},
         },
     )
 
@@ -75,6 +75,6 @@ def test_erp_etag_mismatch_quarantines_concurrent_human_edit(api_client: httpx.C
     # Because the human's edit was preserved on ERP, the post-tx ERP hash differs from pre-tx seed hash
     assert post_state["erp"]["hash"] != pre_erp_hash
     po = next(p for p in post_state["erp"]["purchase_orders"] if p["po_id"] == "PO-1042")
-    # The simulated human set qty to 475 after the agent's 450; Ablate must not restore 500 over it
-    assert po["qty"] == 475
+    # The simulated human set qty to 470 after the agent's 480; Ablate must not restore 500 over it
+    assert po["qty"] == 470
     assert receipt["quarantine"], "expected a 3-way diff for the quarantined PO"

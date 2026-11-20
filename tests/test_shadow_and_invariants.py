@@ -40,7 +40,7 @@ def test_read_your_own_writes_and_zero_live_writes_during_staging(api_client: ht
         json={
             "tx_id": tx_id,
             "tool": "erp.update_po_qty",
-            "args": {"po_id": po_id, "new_qty": 450},
+            "args": {"po_id": po_id, "new_qty": 480},
         },
     )
     assert stage_resp.status_code == 200
@@ -56,7 +56,7 @@ def test_read_your_own_writes_and_zero_live_writes_during_staging(api_client: ht
     )
     assert read_resp.status_code == 200
     read_body = read_resp.json()
-    assert read_body["result"]["qty"] == 450
+    assert read_body["result"]["qty"] == 480
 
     # Verify zero live writes occurred during staging
     mid_hashes = _get_live_hashes(api_client)

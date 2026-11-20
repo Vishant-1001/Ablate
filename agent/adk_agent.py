@@ -279,6 +279,13 @@ async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPCli
                 msg = str(e)
                 eng.emit(tx_id, "AGENT", "AGENT_ERROR", f"{model} failed: {type(e).__name__}: {msg}"[:500], {})
                 reason = f"Gemini failed: {type(e).__name__}"
+                tx = eng.txs.get(tx_id)
+                if tx is not None and tx.closed and any(c["name"] == "commit_transaction" for c in calls):
+                    # the agent finished and committed; only its closing summary failed
+                    _save_cache(act, model, calls)
+                    eng.emit(tx_id, "AGENT", "AGENT_DONE", f"live Gemini ({model}) committed; summary step failed",
+                             {"tool_calls": len(calls)})
+                    return ""
                 if any(x in msg for x in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE"))                         or "ResourceExhausted" in type(e).__name__:
                     overloaded = True
                 elif "404" not in msg and "NOT_FOUND" not in msg:
