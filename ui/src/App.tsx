@@ -122,6 +122,11 @@ export default function App() {
     [receipts],
   );
 
+  // The ledger is a hash chain and survives /admin/reset, so remember how many receipts
+  // existed at the last reset: the invariant panel stays IDLE until a newer one arrives.
+  const [receiptsAtReset, setReceiptsAtReset] = useState(0);
+  const invariantsIdle = !latestReceipt || receipts.length <= receiptsAtReset;
+
   const fetchSnapshot = useCallback(async () => {
     if (pollGuardRef.current) return;
     pollGuardRef.current = true;
@@ -197,6 +202,7 @@ export default function App() {
         if (sData && sData.erp) {
           setState(sData);
         }
+        setReceiptsAtReset(receipts.length);
       }
       await fetchSnapshot();
     } catch (err) {
@@ -651,13 +657,15 @@ export default function App() {
               <div className="grid grid-cols-1 gap-1.5">
                 {INVARIANT_META.map((inv) => {
                   // No result for this check on the latest receipt (e.g. Aegis OFF): it never ran.
-                  const skipped = !!latestReceipt && activeInvariants[inv.key] === undefined;
+                  const idle = invariantsIdle;
+                  const skipped = !idle && activeInvariants[inv.key] === undefined;
+                  const neutral = idle || skipped;
                   const passed = activeInvariants[inv.key] !== false;
                   return (
                     <div
                       key={inv.key}
                       className={`px-2.5 py-1.5 rounded border flex items-center justify-between ${
-                        skipped
+                        neutral
                           ? 'bg-slate-900/60 border-slate-700 text-slate-400'
                           : passed
                             ? 'bg-emerald-950/25 border-emerald-800/60 text-emerald-200'
@@ -675,14 +683,14 @@ export default function App() {
                       </div>
                       <span
                         className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                          skipped
+                          neutral
                             ? 'bg-slate-700/40 text-slate-400'
                             : passed
                               ? 'bg-emerald-500/20 text-emerald-300'
                               : 'bg-rose-500/30 text-rose-200'
                         }`}
                       >
-                        {skipped ? 'SKIPPED' : passed ? 'PASS' : 'VIOLATION'}
+                        {idle ? 'IDLE' : skipped ? 'SKIPPED' : passed ? 'PASS' : 'VIOLATION'}
                       </span>
                     </div>
                   );
