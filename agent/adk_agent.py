@@ -24,8 +24,7 @@ from services.common import ToolError
 from .mcp_client import AblateMCPClient
 
 # gemini-2.5-flash returns 404 for new API keys; ABLATE_MODEL can prepend any model.
-MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
-GEMINI_TIMEOUT_S = float(os.environ.get("ABLATE_GEMINI_TIMEOUT_S", "30"))
+from ablate_tx.config import GEMINI_MODELS as MODELS, GEMINI_TIMEOUT_S  # noqa: E402
 CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gemini_cache.json")
 READ_TOOLS = {"erp_get_po", "wms_get_inventory", "billing_get_invoice"}
 
@@ -53,8 +52,13 @@ def _tainted(args: dict, untrusted: str) -> list[str]:
 
 
 def make_tools(eng, tx_id: str, untrusted: str, allow_wire: bool = False,
-               client: AblateMCPClient | None = None) -> list:
+               client: AblateMCPClient | None = None, announce: list | None = None) -> list:
+    """announce[0], when set, labels non-Gemini callers ("replayed Gemini", "scripted agent")
+    so their tool calls also show up as TOOL_CALL events. Live Gemini logs its own."""
     async def call(tool: str, args: dict) -> dict:
+        if announce and announce[0]:
+            fn = tool.replace(".", "_")
+            eng.emit(tx_id, "AGENT", "TOOL_CALL", f"{announce[0]} called {fn}", {"args": args})
         tainted = _tainted(args, untrusted)
         if client is not None:  # MCP JSON-RPC over HTTP
             return await client.call_tool(tool, args, tainted)
@@ -202,7 +206,9 @@ async def run_agent(eng, tx_id: str, docs: dict, act: str) -> str:
 
 async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPClient | None) -> str:
     mode = os.environ.get("ABLATE_AGENT_MODE", "auto").lower()
-    tools = make_tools(eng, tx_id, docs["edi_memo"], allow_wire=(act == "act3_injection"), client=client)
+    announce: list = [None]
+    tools = make_tools(eng, tx_id, docs["edi_memo"], allow_wire=(act == "act3_injection"), client=client,
+                       announce=announce)
     use_gemini = mode == "gemini" or (mode == "auto" and bool(os.environ.get("GOOGLE_API_KEY")))
     use_cache = os.environ.get("USE_GEMINI_CACHE") == "1"
     cached = _load_cache().get(act)
@@ -212,6 +218,7 @@ async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPCli
                  f"cached_gemini: replaying {len(cached['calls'])} real {cached['model']} tool calls "
                  f"recorded {cached['recorded_at']} ({why})",
                  {"mode": "cached_gemini", "model": cached["model"], "recorded_at": cached["recorded_at"]})
+        announce[0] = "Replayed Gemini"
         await _replay(tools, cached["calls"])
         eng.emit(tx_id, "AGENT", "AGENT_DONE", "cached Gemini trajectory replayed", {})
         return ""
@@ -262,6 +269,7 @@ async def _run_agent(eng, tx_id: str, docs: dict, act: str, client: AblateMCPCli
             return await replay_cache(reason)
     eng.emit(tx_id, "AGENT", "AGENT_MODE", f"scripted_fallback: deterministic agent ({reason})",
              {"mode": "scripted_fallback"})
+    announce[0] = "Scripted agent"
     out = await _run_scripted(docs, tools)
     eng.emit(tx_id, "AGENT", "AGENT_DONE", out, {})
     return out

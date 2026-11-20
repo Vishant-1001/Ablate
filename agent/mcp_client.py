@@ -6,11 +6,10 @@ through one client lands in the same shadow-twin transaction.
 from __future__ import annotations
 
 import itertools
-import os
 
 import httpx
 
-DEFAULT_URL = os.environ.get("ABLATE_MCP_URL", f"http://127.0.0.1:{os.environ.get('PORT', '8000')}/mcp")
+from ablate_tx.config import MCP_URL as DEFAULT_URL
 
 
 class MCPError(RuntimeError):

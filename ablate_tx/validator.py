@@ -25,6 +25,7 @@ INJECTION_PATTERNS = [
 ]
 _INJ = [re.compile(p, re.I) for p in INJECTION_PATTERNS]
 PROTECTED_FIELDS = ("vendor_iban", "amount_usd")
+EXPOSURE_TOOLS = {"billing.issue_credit_note", "billing.send_wire_payout"}
 
 
 @dataclass
@@ -61,14 +62,22 @@ def layer1(tx, twin, services, config) -> list[Check]:
     neg = [i for i in inv if i["on_hand"] - i["reserved"] < 0 or i["reserved"] < 0]
     checks.append(Check("inventory_non_negative", 1, FAIL if neg else PASS, {"violations": neg}))
 
-    # dollar_cap
+    # dollar_cap: each money argument, and the total exposure the tx moves to the vendor
+    # (credit notes + wires). GL adjustments are internal bookkeeping, not exposure.
     cap = float(config.get("max_auto_usd", 5000.0))
-    over = []
+    over, total = [], 0.0
     for s in tx.staged:
         for a in get_spec(s.tool).money_args:
-            if a in s.args and float(s.args[a]) > cap:
-                over.append({"tool": s.tool, "arg": a, "value": float(s.args[a])})
-    checks.append(Check("dollar_cap", 1, ESCALATE if over else PASS, {"max_auto_usd": cap, "over": over}))
+            if a in s.args:
+                v = float(s.args[a])
+                if s.tool in EXPOSURE_TOOLS:
+                    total += v
+                if v > cap:
+                    over.append({"tool": s.tool, "arg": a, "value": v})
+    if total > cap and not over:
+        over.append({"tool": "total_exposure", "arg": "sum", "value": total})
+    checks.append(Check("dollar_cap", 1, ESCALATE if over else PASS,
+                        {"max_auto_usd": cap, "total_exposure_usd": total, "over": over}))
 
     # iban_integrity: no call may introduce an IBAN differing from vendor master data
     viol = []
@@ -83,29 +92,37 @@ def layer1(tx, twin, services, config) -> list[Check]:
     return checks
 
 
-def layer2(tx) -> list[Check]:
+def call_findings(tool: str, args: dict, tainted_fields: list[str], untrusted: str) -> list[dict]:
+    """Taint findings for ONE call. Used at call time (immediate feedback to the agent)
+    and again at commit over every staged call."""
     findings = []
+    for f in tainted_fields:
+        if f in PROTECTED_FIELDS or f in args:
+            findings.append({"tool": tool, "field": f, "reason": "declared tainted"})
+    for text in _strings(args):
+        for rx in _INJ:
+            if rx.search(text):
+                findings.append({"tool": tool, "reason": "injection pattern", "pattern": rx.pattern,
+                                 "text": text[:160]})
+    # provenance: money/IBAN values on a payout that appear only in untrusted EDI text
+    if untrusted and tool == "billing.send_wire_payout":
+        for f in PROTECTED_FIELDS:
+            if f in args:
+                v = args[f]
+                variants = {str(v)}
+                if isinstance(v, (int, float)):
+                    variants |= {f"{v:,.0f}", f"{int(v)}", f"{v:,.2f}"}
+                if any(x and x in untrusted for x in variants):
+                    findings.append({"tool": tool, "field": f, "value": v,
+                                     "reason": "value originates from untrusted EDI memo"})
+    return findings
+
+
+def layer2(tx) -> list[Check]:
     untrusted = " ".join(tx.untrusted_context)
+    findings = []
     for s in tx.staged:
-        for f in s.tainted_fields:
-            if f in PROTECTED_FIELDS or f in s.args:
-                findings.append({"tool": s.tool, "field": f, "reason": "declared tainted"})
-        for text in _strings(s.args):
-            for rx in _INJ:
-                if rx.search(text):
-                    findings.append({"tool": s.tool, "reason": "injection pattern", "pattern": rx.pattern,
-                                     "text": text[:160]})
-        # provenance: protected values that only appear in untrusted EDI text
-        if untrusted:
-            for f in PROTECTED_FIELDS:
-                if f in s.args:
-                    v = s.args[f]
-                    variants = {str(v)}
-                    if isinstance(v, (int, float)):
-                        variants |= {f"{v:,.0f}", f"{int(v)}", f"{v:,.2f}"}
-                    if any(x and x in untrusted for x in variants) and s.tool == "billing.send_wire_payout":
-                        findings.append({"tool": s.tool, "field": f, "value": v,
-                                         "reason": "value originates from untrusted EDI memo"})
+        findings += call_findings(s.tool, s.args, s.tainted_fields, untrusted)
     return [Check("provenance_taint", 2, FAIL if findings else PASS, {"findings": findings})]
 
 

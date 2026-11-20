@@ -149,6 +149,14 @@ async def events_stream(request: Request):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@app.post("/bench/run")
+async def bench_run():
+    """Run the 10-case AegisBench-MCP (deterministic, no LLM). Resets the DBs when done."""
+    from agent.scenarios import bench_table, run_bench
+    report = await run_in_threadpool(run_bench)
+    return {**report, "markdown": bench_table(report)}
+
+
 @app.post("/demo/run/{act}")
 async def demo_run(act: str):
     if act not in ACTS:
