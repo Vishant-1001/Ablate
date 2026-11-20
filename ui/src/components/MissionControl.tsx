@@ -16,36 +16,36 @@ const SCENARIOS: Array<{
     id: 'act1_corruption',
     n: 1,
     title: 'Without Ablate (Direct API)',
-    subtitle: 'Ablate OFF · Billing fails at Step 4 (HTTP 409)',
+    subtitle: 'Protection Off · Billing fails on step 4',
     whatHappens:
-      'The agent updates ERP (500 → 480 units) and Warehouse Inventory (500 → 480), then Billing rejects the $2,000 credit note (HTTP 409). Without Ablate, ERP and Inventory stay permanently corrupted.',
+      'The AI agent reduced ERP Order #1042 (500 → 480 units) and Warehouse Stock (500 → 480 units), then Billing rejected the $2,000 credit note because Invoice #88 is locked. Without Ablate, ERP and Warehouse remain permanently mismatched ($2,000 discrepancy).',
     expect: 'PARTIAL_CORRUPTION',
   },
   {
     id: 'act2_rollback',
     n: 2,
     title: 'With Ablate: Auto-Rollback',
-    subtitle: 'Ablate ON · Billing fails at Step 4 (HTTP 409)',
+    subtitle: 'Protection On · Automatic multi-system undo',
     whatHappens:
-      'Ablate stages the 4 writes in a shadow copy, verifies all business rules, and flushes live. When Billing returns HTTP 409 at Step 4, Ablate automatically reverses Steps 3, 2, and 1 in ~2 ms—restoring all 3 databases to 500 units.',
+      'Ablate staged all 4 changes safely and verified every company policy. When Billing rejected the credit note on step 4, Ablate automatically reversed the Ledger, Warehouse (+20 units), and ERP updates in ~2 milliseconds—leaving all 3 systems 100% restored at 500 units.',
     expect: 'ROLLED_BACK_CLEANLY',
   },
   {
     id: 'act3_injection',
     n: 3,
-    title: 'Unauthorized Wire Blocked',
-    subtitle: 'Ablate ON · Supplier memo requests $12k wire to new IBAN',
+    title: 'Fraudulent Wire Blocked',
+    subtitle: 'Protection On · Tampered invoice requests $12k wire',
     whatHappens:
-      'A disguised supplier memo tricks the agent into initiating a $12,000 wire to an unverified IBAN. Ablate catches the dollar cap ($12k > $5k), IBAN mismatch, and untrusted source inside the shadow copy—0 live database writes occur.',
+      'A manipulated note inside the supplier invoice tried to trick the agent into wiring $12,000 to an unverified bank account. Ablate caught the approval limit ($12,000 > $5,000), unapproved bank IBAN, and untrusted source inside the staging sandbox—zero live systems were touched.',
     expect: 'ABORTED_IN_SHADOW',
   },
   {
     id: 'act4_etag_conflict',
     n: 4,
-    title: 'Concurrent Human Edit Saved',
-    subtitle: 'Ablate ON · Billing 409 + human edits PO to 470 mid-run',
+    title: 'Human Manager Edit Saved',
+    subtitle: 'Protection On · Manager edits order to 470 mid-run',
     whatHappens:
-      'While the agent is running, a human planner changes PO-1042 to 470 units (v3). When Billing fails at Step 4, Ablate rolls back Inventory (+20) and Ledger, detects that PO-1042 changed to v3, and preserves the human edit (470) instead of overwriting it.',
+      'While the agent was running, a human operations manager updated Order #1042 to 470 units. When Billing failed on step 4, Ablate rolled back the Warehouse and Ledger updates, detected the manager’s edit on Order #1042, and preserved the manager’s 470-unit change instead of overwriting it.',
     expect: 'QUARANTINED_CONCURRENT_EDIT',
   },
 ];
@@ -58,7 +58,7 @@ function Toggle({ on, label, onClick }: { on: boolean; label: string; onClick: (
     >
       {label}
       <span
-        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+        className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
           on ? 'bg-ink text-white' : 'bg-[#e5e7eb] text-muted'
         }`}
       >
@@ -100,34 +100,34 @@ export default function MissionControl(props: {
       <div className="rounded-xl border border-line bg-paper p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#1d4ed8]">
-              Interactive Live Sandbox · Google ADK + Gemini 3.5 Flash-Lite
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1d4ed8]">
+              Interactive Enterprise Sandbox · Live 3-System Workflow
             </div>
             <h1 className="mt-0.5 text-[20px] font-bold text-ink">
-              Business Case: Reconciling a 20-Unit ($2,000) Shipment Shortage Across 3 Production Systems
+              Live Case: Reconciling a 20-Unit ($2,000) Shipment Shortage Across ERP, Warehouse &amp; Billing
             </h1>
             <p className="mt-0.5 text-[13px] text-[#374151]">
-              Purchase Order <span className="font-mono font-semibold">PO-1042</span> ordered{' '}
+              Purchase Order <span className="font-semibold">PO-1042</span> ordered{' '}
               <span className="font-semibold">500 units</span> ($50,000), but only{' '}
-              <span className="font-semibold">480 units</span> arrived. Click any scenario below to watch the agent
-              update <span className="font-semibold">ERP</span>, <span className="font-semibold">Warehouse (WMS)</span>,
-              and <span className="font-semibold">Billing</span>:
+              <span className="font-semibold">480 units</span> arrived at the warehouse. Click any scenario below to
+              compare how a standard AI agent fails versus how <span className="font-semibold">Ablate</span> protects
+              production:
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Toggle
               on={config.aegis_enabled}
-              label="Ablate Proxy"
+              label="Ablate Protection"
               onClick={() => props.onConfig({ aegis_enabled: !config.aegis_enabled })}
             />
             <Toggle
               on={config.fail_billing_409}
-              label="Billing 409 Fault"
+              label="Simulate Billing Lock"
               onClick={() => props.onConfig({ fail_billing_409: !config.fail_billing_409 })}
             />
             <Toggle
               on={config.simulate_human_edit}
-              label="Concurrent Human Edit"
+              label="Simulate Manager Edit"
               onClick={() => props.onConfig({ simulate_human_edit: !config.simulate_human_edit })}
             />
             <button
@@ -135,7 +135,7 @@ export default function MissionControl(props: {
               disabled={!!running}
               className="rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium hover:bg-[#f3f4f6] disabled:opacity-50"
             >
-              {running === 'reset' ? 'Resetting…' : 'Reset All 3 DBs'}
+              {running === 'reset' ? 'Resetting…' : 'Reset All Systems to 500 Units'}
             </button>
           </div>
         </div>
@@ -153,7 +153,7 @@ export default function MissionControl(props: {
               >
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
                       Scenario {s.n}
                     </span>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.04em] ${sv.pill}`}>
@@ -188,21 +188,22 @@ export default function MissionControl(props: {
                 {v.label}
               </span>
               <div className="text-[13px] leading-snug text-[#374151]">
-                <span className="font-semibold text-ink">
-                  {activeScenario ? `What just happened (${activeScenario.title}): ` : 'Outcome: '}
+                <span className="font-bold text-ink">
+                  {activeScenario ? `What Just Happened (${activeScenario.title}): ` : `${v.title}: `}
                 </span>
                 {activeScenario ? activeScenario.whatHappens : v.line}
               </div>
             </div>
-            <div className="flex items-center gap-3 font-mono text-[12px] text-muted">
-              <span>tx: {receipt.tx_id}</span>
-              {receipt.rollback_ms != null && <span>undo: {fmtMs(receipt.rollback_ms)}</span>}
+            <div className="flex items-center gap-3 text-[12px] text-muted">
+              {receipt.rollback_ms != null && (
+                <span className="font-semibold text-[#14532d]">Restored in {fmtMs(receipt.rollback_ms)}</span>
+              )}
               {props.onOpenTx && (
                 <button
                   onClick={() => props.onOpenTx?.(receipt.tx_id)}
-                  className="font-sans text-[13px] font-semibold text-[#1d4ed8] underline"
+                  className="text-[13px] font-semibold text-[#1d4ed8] underline"
                 >
-                  Inspect full receipt →
+                  View Audit Report →
                 </button>
               )}
             </div>
@@ -212,11 +213,11 @@ export default function MissionControl(props: {
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1.15fr_1.15fr]">
         <div className="flex flex-col">
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-bold uppercase tracking-[0.04em] text-ink">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[11px] font-bold text-white">
               1
             </span>
-            Step 1 · AI Agent Sends Tool Calls (MCP)
+            Step 1 · AI Agent Requests Multi-System Updates
           </div>
           <div className="flex min-h-[440px] flex-col [&>section]:flex-1">
             <AgentPane events={txEvents} />
@@ -224,11 +225,11 @@ export default function MissionControl(props: {
         </div>
 
         <div className="flex flex-col">
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-bold uppercase tracking-[0.04em] text-ink">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1d4ed8] text-[11px] font-bold text-white">
               2
             </span>
-            Step 2 · Ablate Stages, Validates Rules & Auto-Reverts on Fault
+            Step 2 · Ablate Stages, Verifies Policies &amp; Auto-Reverts on Failure
           </div>
           <div className="flex min-h-[440px] flex-col [&>section]:flex-1">
             <ShadowPane events={txEvents} receipt={receipt} aegis={aegis} />
@@ -236,11 +237,11 @@ export default function MissionControl(props: {
         </div>
 
         <div className="flex flex-col">
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
+          <div className="mb-1.5 flex items-center gap-2 px-1 text-[12px] font-bold uppercase tracking-[0.04em] text-ink">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#15803d] text-[11px] font-bold text-white">
               3
             </span>
-            Step 3 · Resulting Live Enterprise Databases (ERP, WMS, Billing)
+            Step 3 · Live Enterprise Databases (ERP · Warehouse · Billing)
           </div>
           <div className="flex min-h-[440px] flex-col [&>section]:flex-1">
             <LiveStatePane state={state} receipt={receipt} preHashes={preHashes} inFlight={inFlight} />
