@@ -35,11 +35,14 @@ class Engine:
         self.saga = SagaCoordinator(self.services, self.emit)
         self.ledger = Ledger()
         self.events: list[dict] = []
+        self.events_epoch = 0  # bumped on every reset so SSE streams can tell the log was replaced
         self._ev_lock = threading.Lock()
         self.txs: dict[str, Transaction] = {}
 
     # -- events / config / state --------------------------------------
     def emit(self, tx_id: str, phase: str, type_: str, message: str, data: dict | None = None) -> None:
+        if type_ == "AGENT_MODE" and tx_id in self.txs and data:
+            self.txs[tx_id].agent = {k: data[k] for k in ("mode", "model", "recorded_at") if k in data}
         with self._ev_lock:
             self.events.append({"ts": _now(), "tx_id": tx_id or "", "phase": phase, "type": type_,
                                 "message": message, "data": data or {}})
@@ -69,6 +72,7 @@ class Engine:
             self.txs.clear()
         with self._ev_lock:
             self.events.clear()
+            self.events_epoch += 1
         self.emit("", "ADMIN", "RESET", "all services reset to seed state", all_hashes(self.services))
         return self.state()
 
@@ -194,7 +198,7 @@ class Engine:
             "tx_id": tx.tx_id, "ts": _now(), "aegis_enabled": tx.aegis, "status": None,
             "invariants": {}, "invariant_checks": [], "commit_order": [], "pre_tx_hashes": tx.pre_tx_hashes, "post_tx_hashes": {},
             "hashes_match": None, "rollback_ms": None, "compensations": [], "steps": [],
-            "failure": None, "quarantine": [],
+            "failure": None, "quarantine": [], "agent": tx.agent,
         }
         with DB_LOCK:
             try:

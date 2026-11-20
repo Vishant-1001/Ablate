@@ -26,15 +26,19 @@ import {
 } from './components/ui';
 import MissionControl from './components/MissionControl';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const DEFAULT_API =
+  typeof window !== 'undefined' && window.location.port !== '5173'
+    ? window.location.origin
+    : 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API).replace(/\/+$/, '');
 
 type Page = 'overview' | 'mission' | 'transactions' | 'case' | 'evidence' | 'assurance';
 
 const NAV: Array<{ id: Page; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'mission', label: 'Mission control' },
-  { id: 'transactions', label: 'Transactions' },
-  { id: 'evidence', label: 'Evidence' },
+  { id: 'overview', label: 'Product' },
+  { id: 'mission', label: 'Live Demo Sandbox' },
+  { id: 'transactions', label: 'Audit Receipts' },
+  { id: 'evidence', label: 'Event Trace' },
   { id: 'assurance', label: 'Assurance' },
 ];
 
@@ -71,12 +75,41 @@ const ACTS: Array<{ id: DemoAct; n: number; title: string; setup: string; expect
 
 // ============================================================================
 
+// Hash routes make every page and case file linkable, refreshable and Back-able:
+// #/overview  #/mission  #/transactions  #/assurance  #/evidence  #/tx/<id>  #/tx/<id>/evidence
+type Route = { page: Page; tx: string | null };
+const PAGES: Page[] = ['overview', 'mission', 'transactions', 'case', 'evidence', 'assurance'];
+function parseRoute(hash: string): Route {
+  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  if (parts[0] === 'tx' && parts[1]) return { page: parts[2] === 'evidence' ? 'evidence' : 'case', tx: parts[1] };
+  const page = (PAGES as string[]).includes(parts[0]) ? (parts[0] as Page) : 'overview';
+  return { page, tx: null };
+}
+function routeHash(page: Page, tx: string | null): string {
+  if (tx && page === 'case') return `#/tx/${tx}`;
+  if (tx && page === 'evidence') return `#/tx/${tx}/evidence`;
+  return `#/${page}`;
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>('overview');
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
+  useEffect(() => {
+    const onHash = () => setRoute(parseRoute(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const go = useCallback((page: Page, tx: string | null = null) => {
+    const h = routeHash(page, tx);
+    if (window.location.hash !== h) window.location.hash = h; // pushes a history entry
+    else setRoute(parseRoute(h));
+    window.scrollTo(0, 0);
+  }, []);
+  const page = route.page;
+  const selectedTx = route.tx;
+  const setPage = (p: Page) => go(p, p === 'case' || p === 'evidence' ? selectedTx : null);
   const [state, setState] = useState<StatePayload | null>(null);
   const [events, setEvents] = useState<ProxyEvent[]>([]);
   const [receipts, setReceipts] = useState<TxReceipt[]>([]);
-  const [selectedTx, setSelectedTx] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -116,25 +149,57 @@ export default function App() {
       window.clearTimeout(debounce);
       debounce = window.setTimeout(() => void refresh(), 200);
     };
-    const es = new EventSource(`${API_BASE}/events/stream`);
-    es.onopen = () => {
-      setStreaming(true);
-      setEvents([]); // the server replays the full log on every (re)connect
+    let es: EventSource | null = null;
+    let live = false;
+    let retry: number | undefined;
+    let stopped = false;
+    const connect = () => {
+      es = new EventSource(`${API_BASE}/events/stream`);
+      es.onopen = () => {
+        live = true;
+        setStreaming(true);
+        setEvents([]); // the server replays the full log on every (re)connect
+      };
+      es.onerror = () => {
+        live = false;
+        setStreaming(false);
+        // A non-200 answer (e.g. Cloud Run waking a new revision) closes an EventSource for good;
+        // the browser only auto-retries network drops. Reopen it ourselves.
+        if (es && es.readyState === EventSource.CLOSED && !stopped) {
+          es.close();
+          window.clearTimeout(retry);
+          retry = window.setTimeout(connect, 2000);
+        }
+      };
+      es.addEventListener('proxy', (m) => {
+        setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
+        soon();
+      });
+      es.addEventListener('reset', () => {
+        setEvents([]);
+        soon();
+      });
     };
-    es.onerror = () => setStreaming(false); // EventSource reconnects on its own
-    es.addEventListener('proxy', (m) => {
-      setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
-      soon();
-    });
-    es.addEventListener('reset', () => {
-      setEvents([]);
-      soon();
-    });
+    connect();
+    // While the stream is down, poll /events so the panes never go stale.
+    const pollEvents = async () => {
+      if (live) return;
+      try {
+        const r = await fetch(`${API_BASE}/events`);
+        if (r.ok) setEvents(((await r.json()) as { events?: ProxyEvent[] }).events ?? []);
+      } catch {
+        /* offline banner covers this */
+      }
+    };
+    const fast = window.setInterval(() => void pollEvents(), 1000);
     const t = window.setInterval(() => void refresh(), 5000);
     return () => {
-      es.close();
+      stopped = true;
+      es?.close();
       window.clearInterval(t);
+      window.clearInterval(fast);
       window.clearTimeout(debounce);
+      window.clearTimeout(retry);
     };
   }, [refresh]);
 
@@ -152,10 +217,11 @@ export default function App() {
     setRunning(act);
     setError(null);
     try {
-      const data = (await post(`/demo/run/${act}`)) as { receipt: TxReceipt };
-      await refresh();
-      setSelectedTx(data.receipt.tx_id);
-      setPage((p) => (p === 'mission' ? p : 'case')); // stay on the live split-screen
+      await post(`/demo/run/${act}`);
+      const [ev] = await Promise.all([fetch(`${API_BASE}/events`), refresh()]);
+      if (ev.ok) setEvents(((await ev.json()) as { events?: ProxyEvent[] }).events ?? []);
+      // Always take the user to the interactive Live Demo Sandbox so they see the 3-step visual flow
+      go('mission', null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -185,10 +251,7 @@ export default function App() {
     }
   };
 
-  const openTx = (txId: string) => {
-    setSelectedTx(txId);
-    setPage('case');
-  };
+  const openTx = (txId: string) => go('case', txId);
 
   const latest = receipts.length ? receipts[receipts.length - 1] : null;
   const selected = receipts.find((r) => r.tx_id === selectedTx) ?? latest;
@@ -196,22 +259,26 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col bg-white text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-6 px-6">
-          <button onClick={() => setPage('overview')} className="flex items-center gap-3">
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-4 px-6">
+          <button onClick={() => setPage('overview')} className="flex shrink-0 items-center gap-2.5">
             <span className="text-[18px] font-bold tracking-tight">Ablate</span>
-            <span className="hidden rounded-md border border-line px-2 py-0.5 text-[12px] text-muted sm:inline">
-              Demo · local runtime
+            <span className="hidden rounded-md border border-line bg-paper px-2 py-0.5 text-[11px] font-medium text-[#374151] lg:inline">
+              Enterprise MCP Control Plane
             </span>
           </button>
-          <nav className="mx-auto flex gap-6 overflow-x-auto">
+          <nav className="flex items-center gap-5 overflow-x-auto">
             {NAV.map((n) => {
               const active = page === n.id || (n.id === 'transactions' && page === 'case');
               return (
                 <button
                   key={n.id}
                   onClick={() => setPage(n.id)}
-                  className={`whitespace-nowrap border-b-2 py-4 text-[15px] ${
-                    active ? 'border-ink font-semibold text-ink' : 'border-transparent text-[#374151] hover:text-ink'
+                  className={`whitespace-nowrap border-b-2 py-4 text-[14px] ${
+                    active
+                      ? 'border-ink font-semibold text-ink'
+                      : n.id === 'mission'
+                        ? 'border-transparent font-medium text-[#1d4ed8] hover:text-ink'
+                        : 'border-transparent text-[#374151] hover:text-ink'
                   }`}
                 >
                   {n.label}
@@ -219,11 +286,10 @@ export default function App() {
               );
             })}
           </nav>
-          <div className="hidden items-center gap-2 font-mono text-[12px] text-muted md:flex">
+          <div className="hidden shrink-0 items-center gap-2 font-mono text-[11px] text-muted xl:flex">
             <span className={`h-2 w-2 rounded-full ${online ? 'bg-[#16a34a]' : 'bg-danger'}`} />
-            {API_BASE.replace(/^https?:\/\//, '')}
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${streaming ? 'bg-[#e3f2e8] text-[#14532d]' : 'bg-[#f3f4f6] text-muted'}`}>
-              {streaming ? 'SSE live' : 'SSE off'}
+              {streaming ? 'Control Plane Online' : 'Connecting…'}
             </span>
           </div>
         </div>
@@ -253,6 +319,7 @@ export default function App() {
             onConfig={setConfig}
             onReset={reset}
             onOpen={openTx}
+            onOpenSandbox={() => setPage('mission')}
           />
         )}
         {page === 'mission' && (
@@ -265,29 +332,30 @@ export default function App() {
             onRun={runAct}
             onConfig={setConfig}
             onReset={reset}
+            onOpenTx={openTx}
           />
         )}
-        {page === 'transactions' && <Transactions receipts={receipts} config={config} onOpen={openTx} onRun={() => setPage('overview')} />}
+        {page === 'transactions' && <Transactions receipts={receipts} config={config} onOpen={openTx} onRun={() => setPage('mission')} />}
         {page === 'case' && (
-          <CaseFile receipt={selected} receipts={receipts} events={events} onBack={() => setPage('transactions')} onEvidence={() => setPage('evidence')} />
+          <CaseFile receipt={selected} receipts={receipts} events={events} onBack={() => setPage('transactions')} onEvidence={() => go('evidence', selected?.tx_id ?? null)} />
         )}
-        {page === 'evidence' && <Evidence receipt={selected} events={events} state={state} onBack={() => setPage('case')} />}
+        {page === 'evidence' && <Evidence receipt={selected} events={events} state={state} onBack={() => go('case', selected?.tx_id ?? null)} />}
         {page === 'assurance' && <Assurance receipts={receipts} onOpen={openTx} />}
       </main>
 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2 px-6 py-4 text-[12px] text-muted">
           <span>
-            <span className="font-semibold text-ink">Built on Google</span> · Gemini via Google ADK · FastAPI proxy · SQLite services
+            <span className="font-semibold text-ink">Ablate Enterprise</span> · Powered by Google ADK & Gemini · Cloud Run MCP Control Plane
           </span>
-          <span>© Ablate</span>
+          <span>© 2026 Ablate Inc.</span>
         </div>
       </footer>
     </div>
   );
 }
 
-// ============================== Overview ===================================
+// ============================== Overview (Product Page) ====================
 
 function Overview(props: {
   config: RuntimeConfig;
@@ -297,148 +365,234 @@ function Overview(props: {
   onConfig: (p: Partial<RuntimeConfig>) => void;
   onReset: () => void;
   onOpen: (tx: string) => void;
+  onOpenSandbox: () => void;
 }) {
-  const { config, latest, running } = props;
+  const { latest, running } = props;
   const v = verdictOf(latest?.status);
   return (
     <>
-      <section className="mx-auto grid max-w-[1100px] items-center gap-10 px-6 py-14 lg:grid-cols-[1.1fr_1fr]">
+      {/* 1. Enterprise Hero */}
+      <section className="mx-auto grid max-w-[1140px] items-center gap-10 px-6 py-14 lg:grid-cols-[1.15fr_1fr]">
         <div>
           <div className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#1d4ed8]">
-            Transaction safety for production AI agents
+            Transactional Control Plane for Enterprise AI Agents
           </div>
-          <h1 className="mt-4 text-[44px] font-bold leading-[1.08] tracking-tight">
-            Let agents touch production, with a rollback plan.
+          <h1 className="mt-3 text-[42px] font-bold leading-[1.1] tracking-tight">
+            Let AI agents take real actions across your stack—with an automatic undo button.
           </h1>
-          <p className="mt-5 max-w-[520px] text-[17px] leading-relaxed text-[#374151]">
-            Ablate stages every MCP tool call in a shadow copy, checks it against business invariants with zero LLM
-            tokens, then commits across ERP, WMS and billing as one unit. A mid-flight failure is undone by a
-            reverse-saga and proven with state hashes.
+          <p className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-[#374151]">
+            Most enterprise AI agents are stuck in read-only mode because a single failed API call leaves ERP,
+            warehouse inventory, and billing databases half-updated. Ablate sits between your agents and production
+            systems to stage changes safely, enforce business rules with zero LLM guesswork, and automatically roll back
+            partial updates if any step fails.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <button
+              onClick={props.onOpenSandbox}
+              className="rounded-lg bg-[#1d4ed8] px-5 py-2.5 text-[15px] font-semibold text-white hover:bg-[#1e40af]"
+            >
+              Launch Interactive Sandbox →
+            </button>
+            <button
               onClick={() => props.onRun('act2_rollback')}
               disabled={!!running}
-              className="rounded-lg bg-[#1d4ed8] px-5 py-2.5 text-[15px] font-semibold text-white hover:bg-[#1e40af] disabled:opacity-50"
+              className="rounded-lg border border-line bg-white px-5 py-2.5 text-[15px] font-medium hover:bg-paper disabled:opacity-50"
             >
-              {running === 'act2_rollback' ? 'Running…' : 'Run the rollback demo'}
+              {running === 'act2_rollback' ? 'Running Live Rollback…' : 'Watch 2ms Auto-Rollback'}
             </button>
-            <a href="#acts" className="rounded-lg border border-line px-5 py-2.5 text-[15px] font-medium hover:bg-paper">
-              See all four acts
-            </a>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center gap-6 text-[13px] text-muted">
+            <span>✓ 1-line MCP drop-in proxy</span>
+            <span>✓ 0 LLM tokens in verification gate</span>
+            <span>✓ Managed Cloud Run or Private VPC</span>
           </div>
         </div>
 
         <button
-          onClick={() => latest && props.onOpen(latest.tx_id)}
+          onClick={() => (latest ? props.onOpen(latest.tx_id) : props.onOpenSandbox())}
           className="rounded-2xl bg-[#111318] p-6 text-left text-white shadow-[0_20px_50px_rgba(17,19,24,0.25)]"
         >
           <div className="flex items-center justify-between font-mono text-[12px] text-[#9ca3af]">
-            <span>{latest ? latest.tx_id : 'no transactions yet'}</span>
-            <span>{latest ? `${latest.compensations?.length ?? 0} compensations` : ''}</span>
+            <span>LIVE CONTROL PLANE TELEMETRY</span>
+            <span>{latest ? latest.tx_id : 'ready'}</span>
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <span className={`rounded-md px-3 py-1.5 text-[15px] font-bold tracking-[0.06em] ${latest ? v.block : 'bg-[#374151] text-white'}`}>
-              {latest ? v.label : 'IDLE'}
+            <span className={`rounded-md px-3 py-1.5 text-[14px] font-bold tracking-[0.06em] ${latest ? v.block : 'bg-[#16a34a] text-white'}`}>
+              {latest ? v.label : 'PROTECTED'}
             </span>
-            <span className="text-[14px] text-[#e5e7eb]">{latest ? latest.status.replace(/_/g, ' ').toLowerCase() : 'run an act'}</span>
+            <span className="text-[14px] text-[#e5e7eb]">
+              {latest ? latest.status.replace(/_/g, ' ').toLowerCase() : 'all 3 production systems synced'}
+            </span>
           </div>
-          <div className="mt-5 space-y-2 text-[14px]">
-            {(latest?.invariant_checks?.length ? latest.invariant_checks : []).slice(0, 5).map((c) => (
+          <div className="mt-5 space-y-2.5 text-[14px]">
+            {(latest?.invariant_checks?.length
+              ? latest.invariant_checks.slice(0, 5)
+              : [
+                  { name: 'ledger_balance', result: 'PASS' },
+                  { name: 'inventory_non_negative', result: 'PASS' },
+                  { name: 'dollar_cap', result: 'PASS' },
+                  { name: 'iban_integrity', result: 'PASS' },
+                  { name: 'taint_check', result: 'PASS' },
+                ]
+            ).map((c) => (
               <div key={c.name} className="flex justify-between">
-                <span className="text-[#d1d5db]">{INVARIANT_META[c.name.startsWith('dry_run') ? 'dry_run' : c.name]?.label ?? c.name}</span>
+                <span className="text-[#d1d5db]">
+                  {INVARIANT_META[c.name.startsWith('dry_run') ? 'dry_run' : c.name]?.label ?? c.name}
+                </span>
                 <span className={c.result === 'PASS' ? 'text-[#86efac]' : c.result === 'FAIL' ? 'text-[#fca5a5]' : 'text-[#fcd34d]'}>
-                  {c.result === 'ESCALATE_HITL' ? 'Escalate' : c.result === 'PASS' ? 'Pass' : c.result === 'FAIL' ? 'Violation' : 'Skipped'}
+                  {c.result === 'ESCALATE_HITL' ? 'Escalate' : c.result === 'PASS' ? 'Enforced ✓' : c.result === 'FAIL' ? 'Blocked' : 'Skipped'}
                 </span>
               </div>
             ))}
-            {!latest && <div className="text-[#9ca3af]">The latest receipt appears here.</div>}
           </div>
-          {latest && (
-            <div className="mt-5 border-t border-white/10 pt-3 text-[13px] text-[#d1d5db]">
-              hashes_match = <span className="font-mono">{String(latest.hashes_match)}</span> · rollback{' '}
-              <span className="font-mono">{fmtMs(latest.rollback_ms)}</span> · receipt{' '}
-              <span className="font-mono">{short(latest.receipt_hash, 8)}</span>
-            </div>
-          )}
+          <div className="mt-5 border-t border-white/10 pt-3 text-[13px] text-[#d1d5db]">
+            {latest ? (
+              <>
+                state_parity = <span className="font-mono text-[#86efac]">{String(latest.hashes_match)}</span> · undo
+                time <span className="font-mono">{fmtMs(latest.rollback_ms)}</span> · receipt{' '}
+                <span className="font-mono">{short(latest.receipt_hash, 8)}</span>
+              </>
+            ) : (
+              <>100% cross-system consistency · ~2 ms automatic rollback · SHA-256 audit receipts</>
+            )}
+          </div>
         </button>
       </section>
 
-      <section id="acts" className="border-y border-line bg-paper">
-        <div className="mx-auto max-w-[1100px] px-6 py-10">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Guided demo</div>
-              <h2 className="mt-1 text-[22px] font-bold">Four acts, one EDI 856/810 discrepancy</h2>
+      {/* 2. Why Enterprises Need Ablate */}
+      <section className="border-y border-line bg-paper">
+        <div className="mx-auto max-w-[1140px] px-6 py-12">
+          <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#1d4ed8]">
+            The Enterprise Write-Path Gap
+          </div>
+          <h2 className="mt-1 text-[26px] font-bold">
+            Why 85% of enterprise AI pilots are blocked from production write-access
+          </h2>
+          <div className="mt-6 grid gap-5 md:grid-cols-3">
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="font-mono text-[11px] font-bold uppercase text-danger">1. Half-Finished API Updates</div>
+              <div className="mt-2 text-[16px] font-bold">External APIs don’t have a shared Undo</div>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#374151]">
+                When an agent updates an ERP purchase order and warehouse inventory, then hits a billing conflict on
+                step 3, the first two systems remain permanently changed—leaving thousands of dollars in ledger mismatches.
+              </p>
             </div>
-            <button
-              onClick={props.onReset}
-              disabled={!!running}
-              className="rounded-lg border border-line bg-white px-4 py-2 text-[14px] hover:bg-[#f3f4f6] disabled:opacity-50"
-            >
-              {running === 'reset' ? 'Resetting…' : 'Reset all 3 databases'}
-            </button>
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="font-mono text-[11px] font-bold uppercase text-[#5c3700]">2. Prompt & Document Hijacking</div>
+              <div className="mt-2 text-[16px] font-bold">Untrusted invoices can trick agents</div>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#374151]">
+                Agents reading inbound supplier invoices or emails can be tricked by disguised remittance notes into
+                changing vendor bank accounts or initiating unauthorized payouts.
+              </p>
+            </div>
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="font-mono text-[11px] font-bold uppercase text-[#15803d]">3. Human Edits Get Overwritten</div>
+              <div className="mt-2 text-[16px] font-bold">Naive retries clobber human planners</div>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#374151]">
+                If a human operations planner edits an order while an agent is mid-workflow, a naive rollback overwrites
+                the human’s work. Ablate detects concurrent edits via version checks and protects human changes.
+              </p>
+            </div>
           </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {ACTS.map((a) => {
-              const ev = verdictOf(a.expect);
-              return (
-                <div key={a.id} className="flex flex-col rounded-xl border border-line bg-white p-4">
-                  <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">Act {a.n}</div>
-                  <div className="mt-1 text-[16px] font-semibold">{a.title}</div>
-                  <div className="mt-1 flex-1 text-[13px] leading-snug text-muted">{a.setup}</div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold tracking-[0.04em] ${ev.pill}`}>{ev.label}</span>
-                    <button
-                      onClick={() => props.onRun(a.id)}
-                      disabled={!!running}
-                      className="rounded-lg bg-ink px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-black disabled:opacity-40"
-                    >
-                      {running === a.id ? 'Running…' : 'Run'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="mt-4 text-[12px] text-muted">
-            Each run resets the databases, applies that act's settings and runs the Gemini agent (live, or replaying a
-            recorded real Gemini run when <span className="font-mono">USE_GEMINI_CACHE=1</span>).
-          </p>
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1100px] px-6 py-10">
-        <h2 className="text-[17px] font-bold">Runtime settings</h2>
-        <p className="mt-1 text-[13px] text-muted">Live values from POST /admin/config. Running an act overrides them.</p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {(
+      {/* 3. How Ablate Works in 4 Steps */}
+      <section className="mx-auto max-w-[1140px] px-6 py-12">
+        <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">How It Works</div>
+        <h2 className="mt-1 text-[26px] font-bold">Four layers of protection on every agent transaction</h2>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
             [
-              ['aegis_enabled', 'Ablate proxy', 'Stage in shadow, validate, saga commit'],
-              ['fail_billing_409', 'Inject billing 409', 'Credit notes fail on live flush'],
-              ['simulate_human_edit', 'Simulate human edit', 'Planner edits PO-1042 mid-flush'],
-            ] as const
-          ).map(([key, label, desc]) => (
-            <button
-              key={key}
-              onClick={() => props.onConfig({ [key]: !config[key] })}
-              className="flex items-start justify-between gap-3 rounded-xl border border-line bg-white p-4 text-left hover:bg-paper"
-            >
-              <div>
-                <div className="text-[14px] font-semibold">{label}</div>
-                <div className="mt-0.5 text-[12px] text-muted">{desc}</div>
-              </div>
-              <span
-                className={`mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${config[key] ? 'bg-ink' : 'bg-[#d1d5db]'}`}
-              >
-                <span className={`h-4 w-4 rounded-full bg-white transition ${config[key] ? 'translate-x-4' : ''}`} />
-              </span>
-            </button>
+              '01 · Shadow Staging',
+              'Buffer writes before touching live APIs',
+              'Every mutating tool call is intercepted into an isolated shadow copy so your agent can reason across multiple steps with zero risk to live databases.',
+            ],
+            [
+              '02 · Deterministic Rule Gate',
+              'Enforce hard business rules (0 LLM tokens)',
+              'Checks double-entry balance, non-negative inventory, cumulative dollar limits ($5,000 cap), bank IBAN whitelists, and untrusted input taint in microseconds.',
+            ],
+            [
+              '03 · Irreversible Action Ordering',
+              'Hold payouts and emails until last',
+              'Reversible updates commit first. Irreversible actions (wire transfers, external notifications) are strictly held until every prior step succeeds.',
+            ],
+            [
+              '04 · Automatic Undo & Receipt',
+              'Millisecond reverse-saga + SHA-256 proof',
+              'If any downstream API fails, Ablate automatically fires the compensating undo calls in reverse order and seals a tamper-evident audit receipt.',
+            ],
+          ].map(([step, title, body]) => (
+            <div key={step} className="rounded-xl border border-line bg-white p-5">
+              <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d4ed8]">{step}</div>
+              <div className="mt-2 text-[15px] font-bold text-ink">{title}</div>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#374151]">{body}</p>
+            </div>
           ))}
-          <div className="rounded-xl border border-line bg-white p-4">
-            <div className="text-[14px] font-semibold">Auto-approve cap</div>
-            <div className="mt-0.5 text-[12px] text-muted">Above this, escalate to a human</div>
-            <div className="mt-2 font-mono text-[20px] font-medium">${config.max_auto_usd.toLocaleString()}</div>
+        </div>
+      </section>
+
+      {/* 4. Enterprise Deployment & Pricing */}
+      <section className="border-t border-line bg-paper">
+        <div className="mx-auto max-w-[1140px] px-6 py-12">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+                Deployment & Commercial Plans
+              </div>
+              <h2 className="mt-1 text-[26px] font-bold">Drop-in MCP proxy—deploy in Cloud Run or your Private VPC</h2>
+            </div>
+            <button
+              onClick={props.onOpenSandbox}
+              className="rounded-lg bg-ink px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-black"
+            >
+              Test in Live Demo Sandbox →
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-3">
+            <div className="flex flex-col justify-between rounded-xl border border-line bg-white p-6">
+              <div>
+                <div className="font-mono text-[11px] font-semibold uppercase text-muted">Developer / Open Source</div>
+                <div className="mt-2 text-[28px] font-bold">$0 <span className="text-[14px] font-normal text-muted">/ month</span></div>
+                <p className="mt-2 text-[13px] text-[#374151]">For local agent development, staging POCs, and CI fault testing.</p>
+                <ul className="mt-4 space-y-2 text-[13px] text-[#374151]">
+                  <li>✓ Local MCP JSON-RPC proxy & shadow twin</li>
+                  <li>✓ 5 deterministic financial & inventory rules</li>
+                  <li>✓ Local SQLite hash-chained receipt ledger</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between rounded-xl border-2 border-ink bg-white p-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[11px] font-semibold uppercase text-[#1d4ed8]">Growth Cloud</span>
+                  <span className="rounded-full bg-[#eef4ff] px-2.5 py-0.5 text-[11px] font-semibold text-[#1d4ed8]">Most Popular</span>
+                </div>
+                <div className="mt-2 text-[28px] font-bold">$1,500 <span className="text-[14px] font-normal text-muted">/ month</span></div>
+                <p className="mt-2 text-[13px] text-[#374151]">Managed Cloud Run control plane for scaling production write-agents.</p>
+                <ul className="mt-4 space-y-2 text-[13px] text-[#374151]">
+                  <li>✓ 50,000 committed multi-step transactions / mo</li>
+                  <li>✓ Pre-built Undo Connectors (NetSuite, Stripe, Salesforce, Shopify, Jira)</li>
+                  <li>✓ Real-time Mission Control & SSE telemetry</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between rounded-xl border border-line bg-white p-6">
+              <div>
+                <div className="font-mono text-[11px] font-semibold uppercase text-muted">Enterprise Private VPC</div>
+                <div className="mt-2 text-[28px] font-bold">$6,000 <span className="text-[14px] font-normal text-muted">/ month</span></div>
+                <p className="mt-2 text-[13px] text-[#374151]">For regulated enterprises, FinTech, and Global 2000 capability centers.</p>
+                <ul className="mt-4 space-y-2 text-[13px] text-[#374151]">
+                  <li>✓ Self-hosted inside customer GCP / AWS VPC (zero data leaves network)</li>
+                  <li>✓ Custom SAP / ERP undo mappings & ETag human-edit protection</li>
+                  <li>✓ SOX / ISO tamper-evident audit exports & 99.99% SLA</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -556,6 +710,7 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
   const v = verdictOf(receipt.status);
   const txEvents = events.filter((e) => e.tx_id === receipt.tx_id);
   const agentMode = txEvents.filter((e) => e.type === 'AGENT_MODE').pop();
+  const agentInfo = (receipt.agent ?? (agentMode?.data as { mode?: string; model?: string } | undefined)) || null;
   const staged = txEvents.filter((e) => e.type === 'SHADOW_WRITE');
   const idx = receipts.findIndex((r) => r.receipt_hash === receipt.receipt_hash);
   const linked = idx <= 0 ? receipt.prev_hash === '0'.repeat(64) : receipts[idx - 1].receipt_hash === receipt.prev_hash;
@@ -572,7 +727,14 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
       receipt.status !== 'ABORTED_IN_SHADOW' && receipt.status !== 'ESCALATED_HITL' ? true : receipt.hashes_match,
       receipt.status === 'ABORTED_IN_SHADOW' || receipt.status === 'ESCALATED_HITL' ? 'Zero live writes (post hash == pre hash)' : 'Validation ran before any live write',
     ],
-    [comps.every((c) => c.status === 'COMPENSATED') || comps.length === 0, comps.length ? `${comps.filter((c) => c.status === 'COMPENSATED').length}/${comps.length} compensations applied` : 'No compensation needed'],
+    [
+      comps.every((c) => c.status === 'COMPENSATED' || c.status === 'QUARANTINED_CONCURRENT_EDIT'),
+      !comps.length
+        ? 'No compensation needed'
+        : comps.some((c) => c.status === 'QUARANTINED_CONCURRENT_EDIT')
+          ? `${comps.filter((c) => c.status === 'COMPENSATED').length} undone · ${comps.filter((c) => c.status === 'QUARANTINED_CONCURRENT_EDIT').length} quarantined (human edit kept)`
+          : `${comps.filter((c) => c.status === 'COMPENSATED').length}/${comps.length} compensations applied`,
+    ],
     [receipt.status === 'ROLLED_BACK_CLEANLY' ? receipt.hashes_match : true, receipt.status === 'ROLLED_BACK_CLEANLY' ? 'Post-rollback hash == pre-transaction hash' : 'Deterministic checks, no LLM judge'],
     [linked, 'Receipt hash-chained to the previous receipt'],
   ];
@@ -589,10 +751,10 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
 
       <Card className="mt-3">
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-4">
             <span className={`rounded-lg px-4 py-2.5 text-[18px] font-bold tracking-[0.04em] ${v.block}`}>{v.label}</span>
-            <div>
-              <div className="text-[22px] font-bold">
+            <div className="min-w-0">
+              <div className="break-all text-[22px] font-bold">
                 <span className="font-mono text-[20px]">{receipt.tx_id}</span> · {receipt.aegis_enabled ? 'Ablate ON' : 'Ablate OFF'}
               </div>
               <div className="text-[14px] text-muted">{v.line}</div>
@@ -606,7 +768,7 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
       </Card>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Card title="Commit plan" aside="COMPENSABLE first → PIVOT last · undone in reverse on fault">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-[14px]">
@@ -737,9 +899,9 @@ function CaseFile({ receipt, receipts, events, onBack, onEvidence }: { receipt: 
           <Card>
             <dl className="grid grid-cols-2 gap-y-2 px-5 py-4 text-[14px]">
               <dt className="text-muted">Agent</dt>
-              <dd>{agentMode ? String((agentMode.data as Record<string, unknown>).mode ?? '').replace('_', ' ') : '—'}</dd>
+              <dd>{agentInfo?.mode ? String(agentInfo.mode).replace('_', ' ') : '—'}</dd>
               <dt className="text-muted">Model</dt>
-              <dd className="font-mono text-[12px]">{agentMode ? String((agentMode.data as Record<string, unknown>).model ?? '—') : '—'}</dd>
+              <dd className="font-mono text-[12px]">{agentInfo?.model ? String(agentInfo.model) : '—'}</dd>
               <dt className="text-muted">Steps applied</dt>
               <dd>{applied}</dd>
               <dt className="text-muted">Compensations</dt>

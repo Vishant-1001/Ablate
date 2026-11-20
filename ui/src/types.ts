@@ -52,6 +52,7 @@ export interface TxReceipt {
   receipt_hash: string;
   prev_hash: string;
   ts?: string;
+  agent?: { mode?: string; model?: string; recorded_at?: string } | null;
   aegis_enabled?: boolean;
   commit_ms?: number;
   invariant_checks?: InvariantCheck[];
