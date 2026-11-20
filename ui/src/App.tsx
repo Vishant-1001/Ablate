@@ -26,7 +26,11 @@ import {
 } from './components/ui';
 import MissionControl from './components/MissionControl';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const DEFAULT_API =
+  typeof window !== 'undefined' && window.location.port !== '5173'
+    ? window.location.origin
+    : 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API).replace(/\/+$/, '');
 
 type Page = 'overview' | 'mission' | 'transactions' | 'case' | 'evidence' | 'assurance';
 

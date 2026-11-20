@@ -170,3 +170,12 @@ async def demo_run(act: str):
                             "message": f"unknown act {act}", "data": {"acts": list(ACTS)}}})
     from agent.scenarios import run_act
     return await run_act(act)
+
+
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+_UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
+if _UI_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_UI_DIST), html=True), name="ui")
+
