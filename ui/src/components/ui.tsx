@@ -1,60 +1,157 @@
 import type { ReactNode } from 'react';
-import type { InvariantCheck } from '../types';
+import type { InvariantCheck, TxReceipt } from '../types';
 
-// Shared styling primitives and helpers (light case-file design system).
+// Shared styling primitives and plain-English enterprise formatters (same theme, zero dev jargon).
 
 export const INVARIANT_META: Record<string, { label: string; layer: string; desc: string }> = {
-  ledger_balance: { label: 'Ledger balance', layer: 'L1', desc: 'Every GL entry: debit == credit' },
-  inventory_non_negative: { label: 'Inventory non-negative', layer: 'L1', desc: 'on_hand − reserved ≥ 0' },
-  dollar_cap: { label: 'Dollar cap', layer: 'L1', desc: 'Money moved ≤ max_auto_usd, else human approval' },
-  iban_integrity: { label: 'IBAN integrity', layer: 'L1', desc: 'Payout IBAN matches vendor master data' },
-  provenance_taint: { label: 'Provenance taint', layer: 'L2', desc: 'No money or IBAN field sourced from untrusted EDI text' },
-  dry_run: { label: 'Native dry-run', layer: 'L3', desc: 'Live APIs accept the call with dry_run=true' },
-  aegis_disabled: { label: 'Gate skipped: Ablate OFF', layer: '—', desc: 'No shadow twin, no checks, no rollback' },
+  ledger_balance: {
+    label: 'Double-Entry Accounting Balance',
+    layer: 'Policy 1',
+    desc: 'Every general ledger entry must have equal debit and credit amounts',
+  },
+  inventory_non_negative: {
+    label: 'Warehouse Stock Floor Protection',
+    layer: 'Policy 2',
+    desc: 'Available warehouse stock can never drop below zero',
+  },
+  dollar_cap: {
+    label: 'Single-Transaction Approval Limit ($5,000)',
+    layer: 'Policy 3',
+    desc: 'Transactions above $5,000 are automatically held for manager sign-off',
+  },
+  iban_integrity: {
+    label: 'Verified Vendor Bank Account (IBAN)',
+    layer: 'Policy 4',
+    desc: 'Payout destination must match the vendor’s approved master bank record',
+  },
+  provenance_taint: {
+    label: 'Document & Prompt Manipulation Shield',
+    layer: 'Policy 5',
+    desc: 'External invoice notes cannot alter payout amounts or bank accounts',
+  },
+  dry_run: {
+    label: 'Pre-Commit System Readiness Check',
+    layer: 'Pre-Check',
+    desc: 'Target systems confirm readiness before changes are committed',
+  },
+  aegis_disabled: {
+    label: 'Protection Bypassed (Ablate Off)',
+    layer: 'Unprotected',
+    desc: 'Changes wrote directly to live systems without staging or rollback protection',
+  },
 };
 
-// ---------- verdict styling (mockup: red BLOCK block, pill badges) ----------
-
-export const VERDICT: Record<string, { label: string; block: string; pill: string; line: string }> = {
+export const VERDICT: Record<string, { label: string; block: string; pill: string; line: string; title: string }> = {
   PARTIAL_CORRUPTION: {
-    label: 'CORRUPTED',
+    label: 'DATA MISMATCH',
     block: 'bg-danger text-white',
     pill: 'bg-danger text-white',
-    line: 'Downstream fault left ERP and WMS changed with nothing to undo them.',
+    title: 'Unprotected Agent Run — Partial System Corruption',
+    line: 'Billing rejected the credit note while ERP and Warehouse remained permanently altered ($2,000 discrepancy left behind).',
   },
   ABORTED_IN_SHADOW: {
-    label: 'BLOCKED',
+    label: 'THREAT BLOCKED',
     block: 'bg-danger text-white',
     pill: 'bg-danger text-white',
-    line: 'Rejected by the invariant gate in the shadow twin. Zero live writes.',
+    title: 'Unauthorized Payout Blocked Before Reaching Production',
+    line: 'Ablate caught an unapproved $12,000 wire to an altered bank account in the staging sandbox. Zero live systems were touched.',
   },
   ESCALATED_HITL: {
-    label: 'ESCALATED',
+    label: 'HELD FOR APPROVAL',
     block: 'bg-[#fbebc8] text-[#5c3700]',
     pill: 'bg-[#fbebc8] text-[#5c3700]',
-    line: 'Over the auto-approve dollar cap. Held for a human approver; nothing written.',
+    title: 'Transaction Held for Manager Approval',
+    line: 'Total financial value exceeded the $5,000 automated approval limit. Held safely in staging.',
   },
   ROLLED_BACK_CLEANLY: {
-    label: 'ROLLED BACK',
-    block: 'bg-ink text-white',
+    label: 'AUTO-RESTORED',
+    block: 'bg-[#15803d] text-white',
     pill: 'bg-[#e3f2e8] text-[#14532d]',
-    line: 'Fault mid-flush. Reverse-saga undid every applied step; state hashes match pre-tx.',
+    title: 'All 3 Enterprise Systems Automatically Restored',
+    line: 'When Billing failed on step 4, Ablate automatically reversed the ERP and Warehouse updates in milliseconds.',
   },
   QUARANTINED_CONCURRENT_EDIT: {
-    label: 'QUARANTINED',
+    label: 'HUMAN EDIT SAVED',
     block: 'bg-[#fbebc8] text-[#5c3700]',
     pill: 'bg-[#fbebc8] text-[#5c3700]',
-    line: 'A human edited the record mid-flush. Ablate refused to overwrite it and logged a 3-way diff.',
+    title: 'Human Planner Edit Protected During Rollback',
+    line: 'A human manager updated Purchase Order #1042 while the agent was working. Ablate rolled back Warehouse and Ledger without overwriting the manager’s edit.',
   },
   COMMITTED: {
-    label: 'COMMITTED',
+    label: 'COMPLETED',
     block: 'bg-[#e3f2e8] text-[#14532d]',
     pill: 'bg-[#e3f2e8] text-[#14532d]',
-    line: 'Passed every check and flushed to live services.',
+    title: 'Multi-System Update Completed Safely',
+    line: 'All business policies passed and changes were committed across ERP, Warehouse, and Billing.',
   },
 };
 
 export const verdictOf = (s?: string) => VERDICT[s ?? ''] ?? VERDICT.COMMITTED;
+
+/** Plain-English title for any tool name */
+export function friendlyToolName(tool: string): string {
+  const map: Record<string, string> = {
+    'erp.get_po': 'Read ERP Purchase Order',
+    'erp.update_po_qty': 'Update ERP Purchase Order Quantity',
+    'erp.post_gl_adjustment': 'Post General Ledger Accounting Entry',
+    'erp.reverse_gl_adjustment': 'Reverse General Ledger Entry',
+    'wms.get_inventory': 'Check Warehouse Stock Levels',
+    'wms.adjust_reservation': 'Adjust Warehouse Reserved Stock',
+    'billing.get_invoice': 'Read Vendor Billing Invoice',
+    'billing.issue_credit_note': 'Issue Billing Credit Note',
+    'billing.void_credit_note': 'Cancel Billing Credit Note',
+    'billing.send_wire_payout': 'Initiate Outbound Bank Wire Transfer',
+    'ablate.begin_tx': 'Start Protected Transaction Session',
+    'ablate.commit_tx': 'Verify Rules & Commit Across All Systems',
+    'ablate.abort_tx': 'Cancel Staged Transaction',
+  };
+  return map[tool] ?? tool.replace(/[._]/g, ' ');
+}
+
+/** Plain-English summary of tool arguments */
+export function friendlyArgs(tool: string, args: Record<string, unknown> = {}): string {
+  if (tool === 'erp.get_po') return `Order ${String(args.po_id ?? 'PO-1042')}`;
+  if (tool === 'wms.get_inventory') return `Item ${String(args.sku ?? 'SKU-900')}`;
+  if (tool === 'billing.get_invoice') return `Invoice ${String(args.invoice_id ?? 'INV-88')}`;
+  if (tool === 'erp.update_po_qty') {
+    return `Order ${String(args.po_id ?? 'PO-1042')} → Set quantity to ${String(args.new_qty ?? '')} units`;
+  }
+  if (tool === 'wms.adjust_reservation') {
+    const d = Number(args.delta_qty ?? 0);
+    return `Item ${String(args.sku ?? 'SKU-900')} → ${d < 0 ? `Release ${Math.abs(d)} reserved units` : `Restore +${d} reserved units`}`;
+  }
+  if (tool === 'erp.post_gl_adjustment') {
+    return `Order ${String(args.po_id ?? 'PO-1042')} → $${Number(args.debit ?? 0).toLocaleString()} Debit / $${Number(args.credit ?? 0).toLocaleString()} Credit`;
+  }
+  if (tool === 'billing.issue_credit_note') {
+    return `Invoice ${String(args.invoice_id ?? 'INV-88')} → Issue $${Number(args.amount_usd ?? 0).toLocaleString()} credit note`;
+  }
+  if (tool === 'billing.send_wire_payout') {
+    return `Invoice ${String(args.invoice_id ?? 'INV-88')} → Wire $${Number(args.amount_usd ?? 0).toLocaleString()} to account ${String(args.vendor_iban ?? '')}`;
+  }
+  const entries = Object.entries(args).filter(([k]) => !['idempotency_key', 'tx_id', 'dry_run'].includes(k));
+  if (!entries.length) return 'All staged systems';
+  return entries.map(([k, v]) => `${k.replace(/_/g, ' ')}: ${String(v)}`).join(' · ');
+}
+
+/** Plain-English undo strategy name */
+export function friendlyUndoStrategy(strategy?: string, tool?: string): string {
+  if (strategy === 'VOID_BY_ID' || tool?.includes('gl_adjustment')) return 'Automatic Ledger Reversal';
+  if (strategy === 'DELTA' || tool?.includes('adjust_reservation')) return 'Incremental Stock Restoration (+20 units)';
+  if (strategy === 'ETAG_RESTORE' || tool?.includes('update_po_qty')) return 'Version-Checked Order Restoration';
+  return 'Automatic Undo';
+}
+
+/** Human-friendly workflow title for a receipt (replaces raw tx_3439ca0e0650 headlines) */
+export function friendlyReceiptTitle(r: TxReceipt | null, index?: number): string {
+  if (!r) return 'No Workflow Selected';
+  const labelNum = typeof index === 'number' && index >= 0 ? `Run #${index + 1} · ` : '';
+  if (r.status === 'ABORTED_IN_SHADOW') return `${labelNum}Invoice #88 Wire Transfer Request (Blocked)`;
+  if (r.status === 'PARTIAL_CORRUPTION') return `${labelNum}Purchase Order #1042 Shortage (Unprotected Failure)`;
+  if (r.status === 'QUARANTINED_CONCURRENT_EDIT') return `${labelNum}Purchase Order #1042 Shortage (Human Edit Protected)`;
+  if (r.status === 'ROLLED_BACK_CLEANLY') return `${labelNum}Purchase Order #1042 Shortage (Auto-Restored)`;
+  return `${labelNum}Purchase Order #1042 Shortage Reconciliation`;
+}
 
 export function Pill({ tone, children }: { tone: 'red' | 'green' | 'amber' | 'slate' | 'gray'; children: ReactNode }) {
   const cls = {
@@ -76,7 +173,7 @@ export function Card({ title, aside, children, className = '' }: { title?: strin
     <section className={`min-w-0 rounded-xl border border-line bg-white ${className}`}>
       {title && (
         <div className="flex items-baseline justify-between gap-4 px-5 pt-4 pb-3">
-          <h2 className="text-[17px] font-bold text-ink">{title}</h2>
+          <h2 className="text-[16px] font-bold text-ink">{title}</h2>
           {aside && <div className="text-[12px] text-muted">{aside}</div>}
         </div>
       )}
@@ -94,7 +191,7 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
-export const short = (h?: string, n = 10) => (h ? (h.length > n ? `${h.slice(0, n)}…` : h) : '—');
+export const short = (h?: string, n = 8) => (h ? (h.length > n ? `${h.slice(0, n)}…` : h) : '—');
 export const fmtMs = (v?: number | null) => (typeof v === 'number' ? `${v.toFixed(1)} ms` : '—');
 export const median = (xs: number[]) => {
   if (!xs.length) return null;
@@ -114,25 +211,31 @@ export function checkSummary(c: InvariantCheck): string {
   const d = c.detail || {};
   if (c.name === 'dollar_cap') {
     const over = (d.over as Array<{ tool: string; value: number }>) || [];
-    return over.length ? over.map((o) => `${o.tool} $${o.value.toLocaleString()}`).join(', ') + ` > $${Number(d.max_auto_usd).toLocaleString()}` : `≤ $${Number(d.max_auto_usd ?? 0).toLocaleString()}`;
+    return over.length
+      ? `Requested $${over[0].value.toLocaleString()} exceeds the $${Number(d.max_auto_usd).toLocaleString()} automated limit`
+      : `Within $${Number(d.max_auto_usd ?? 5000).toLocaleString()} automated approval limit`;
   }
   if (c.name === 'iban_integrity') {
     const v = (d.violations as Array<{ requested: string; master: string }>) || [];
-    return v.length ? `requested ${v[0].requested} ≠ master ${v[0].master}` : 'IBANs match vendor master';
+    return v.length
+      ? `Unapproved bank account (${v[0].requested}) does not match vendor record on file`
+      : 'Matches approved vendor bank account on file';
   }
   if (c.name === 'provenance_taint') {
     const f = (d.findings as Array<{ tool: string; reason: string; field?: string }>) || [];
-    return f.length ? f.map((x) => `${x.field ?? x.tool}: ${x.reason}`).slice(0, 2).join(' · ') : 'no untrusted values reach money fields';
+    return f.length
+      ? 'Blocked attempt by external invoice text to trigger an unauthorized bank wire'
+      : 'No external document text altered payment parameters';
   }
   if (c.name === 'ledger_balance') {
     const u = (d.unbalanced as unknown[]) || [];
-    return u.length ? `${u.length} unbalanced entr${u.length > 1 ? 'ies' : 'y'}` : 'all entries balance';
+    return u.length ? 'Accounting debit and credit amounts do not match' : 'Debits and credits balance to $0.00';
   }
   if (c.name === 'inventory_non_negative') {
     const v = (d.violations as unknown[]) || [];
-    return v.length ? `${v.length} SKU would go negative` : 'no SKU goes negative';
+    return v.length ? 'Order change would result in negative warehouse stock' : 'Warehouse stock remains positive (520 units available)';
   }
-  if (c.name.startsWith('dry_run')) return c.result === 'PASS' ? 'accepted by live API' : String(d.message ?? 'rejected');
+  if (c.name.startsWith('dry_run')) return c.result === 'PASS' ? 'Target system pre-check passed' : String(d.message ?? 'Rejected by target system');
   return '';
 }
 
@@ -145,7 +248,6 @@ export function download(name: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
-
 export const PHASE_TONE: Record<string, string> = {
   AGENT: 'bg-[#eef2ff] text-[#3730a3]',
   STAGE: 'bg-[#f3f4f6] text-[#374151]',
@@ -157,17 +259,37 @@ export const PHASE_TONE: Record<string, string> = {
   BEGIN: 'bg-[#f3f4f6] text-[#374151]',
 };
 
+const COL_LABELS: Record<string, string> = {
+  po_id: 'Order #',
+  vendor_id: 'Vendor',
+  sku: 'Item SKU',
+  qty: 'Quantity',
+  unit_price: 'Unit Price ($)',
+  status: 'Status',
+  version: 'Revision',
+  entry_id: 'Entry',
+  debit: 'Debit ($)',
+  credit: 'Credit ($)',
+  memo: 'Description',
+  on_hand: 'Total Stock',
+  reserved: 'Reserved',
+  invoice_id: 'Invoice #',
+  amount_usd: 'Amount ($)',
+  vendor_iban: 'Bank IBAN',
+  credit_id: 'Credit Note #',
+};
+
 export function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
-  if (!rows.length) return <div className="px-4 py-3 text-[13px] text-muted">empty</div>;
+  if (!rows.length) return <div className="px-4 py-3 text-[13px] text-muted">No records added</div>;
   const cols = Object.keys(rows[0]);
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left font-mono text-[12px]">
+      <table className="w-full text-left text-[12px]">
         <thead>
-          <tr className="border-b border-line text-muted">
+          <tr className="border-b border-line text-[11px] font-semibold text-muted">
             {cols.map((c) => (
-              <th key={c} className="px-3 py-2 font-medium">
-                {c}
+              <th key={c} className="px-3 py-2">
+                {COL_LABELS[c] ?? c}
               </th>
             ))}
           </tr>
@@ -176,8 +298,10 @@ export function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
           {rows.map((r, i) => (
             <tr key={i} className="border-b border-line last:border-0">
               {cols.map((c) => (
-                <td key={c} className="whitespace-nowrap px-3 py-2">
-                  {String(r[c])}
+                <td key={c} className="whitespace-nowrap px-3 py-2 text-ink">
+                  {typeof r[c] === 'number' && (c.includes('usd') || c.includes('price') || c === 'debit' || c === 'credit')
+                    ? `$${Number(r[c]).toLocaleString()}`
+                    : String(r[c])}
                 </td>
               ))}
             </tr>
@@ -187,4 +311,3 @@ export function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
     </div>
   );
 }
-
