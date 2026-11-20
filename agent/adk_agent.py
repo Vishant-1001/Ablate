@@ -8,6 +8,7 @@ always recorded in /events (type AGENT_MODE), never hidden.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import uuid
@@ -15,6 +16,8 @@ import uuid
 from services.common import ToolError
 
 MODEL = os.environ.get("ABLATE_MODEL", "gemini-2.5-flash")
+FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-flash-latest"]
+GEMINI_TIMEOUT_S = float(os.environ.get("ABLATE_GEMINI_TIMEOUT_S", "180"))
 
 INSTRUCTION = """You are an autonomous accounts-payable reconciliation agent for an ERP back office.
 You receive an EDI 856 ship notice, an EDI 810 invoice and a free-text EDI memo from the vendor.
@@ -82,12 +85,12 @@ def make_tools(eng, tx_id: str, untrusted: str) -> list:
             wms_adjust_reservation, billing_get_invoice, billing_issue_credit_note, billing_send_wire_payout]
 
 
-async def _run_gemini(eng, tx_id: str, docs: dict, tools: list) -> str:
+async def _run_gemini(eng, tx_id: str, docs: dict, tools: list, model: str) -> str:
     from google.adk.agents import Agent
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
-    agent = Agent(name="ablate_ap_agent", model=MODEL, instruction=INSTRUCTION, tools=tools)
+    agent = Agent(name="ablate_ap_agent", model=model, instruction=INSTRUCTION, tools=tools)
     runner = InMemoryRunner(agent=agent, app_name="ablate")
     session = await runner.session_service.create_session(app_name="ablate", user_id="ops")
     prompt = "\n".join([docs["asn_856"], docs["invoice_810"], docs["edi_memo"]])
@@ -130,17 +133,38 @@ async def run_agent(eng, tx_id: str, docs: dict, act: str) -> str:
     mode = os.environ.get("ABLATE_AGENT_MODE", "auto").lower()
     tools = make_tools(eng, tx_id, docs["edi_memo"])
     use_gemini = mode == "gemini" or (mode == "auto" and os.environ.get("GOOGLE_API_KEY"))
+    reason = "no GOOGLE_API_KEY"
     if use_gemini:
-        try:
-            eng.emit(tx_id, "AGENT", "AGENT_MODE", f"google-adk agent on {MODEL}", {"mode": "gemini"})
-            out = await _run_gemini(eng, tx_id, docs, tools)
-            eng.emit(tx_id, "AGENT", "AGENT_DONE", "Gemini agent finished", {"summary": out[:2000]})
-            return out
-        except Exception as e:  # network / quota / import errors: fall back, but say so
-            eng.emit(tx_id, "AGENT", "AGENT_ERROR", f"Gemini run failed: {type(e).__name__}: {e}"[:500], {})
-            if mode == "gemini":
-                raise
-    eng.emit(tx_id, "AGENT", "AGENT_MODE", "deterministic scripted agent (no GOOGLE_API_KEY)", {"mode": "scripted"})
+        # gemini-2.5-flash is closed to new API keys; fall back to newer flash on 404
+        for model in dict.fromkeys([MODEL] + FALLBACK_MODELS):
+            if not eng.rewind(tx_id):
+                break  # a failed attempt already wrote live (aegis OFF): don't run twice
+            try:
+                eng.emit(tx_id, "AGENT", "AGENT_MODE", f"google-adk agent on {model}", {"mode": "gemini", "model": model})
+                out = await asyncio.wait_for(_run_gemini(eng, tx_id, docs, tools, model), GEMINI_TIMEOUT_S)
+                eng.emit(tx_id, "AGENT", "AGENT_DONE", f"Gemini agent ({model}) finished", {"summary": (out or "")[:2000]})
+                return out
+            except asyncio.TimeoutError:
+                tx = eng.txs[tx_id]
+                done = {s.tool for s in tx.staged} | {s["tool"] for s in tx.live_steps}
+                if "billing.issue_credit_note" in done:
+                    eng.emit(tx_id, "AGENT", "AGENT_DONE",
+                             f"Gemini ({model}) finished its tool calls; final summary timed out", {})
+                    return ""
+                eng.emit(tx_id, "AGENT", "AGENT_ERROR", f"Gemini ({model}) timed out after {GEMINI_TIMEOUT_S:.0f}s", {})
+                reason = "Gemini timed out"
+            except Exception as e:  # network / quota / import errors: fall back, but say so
+                eng.emit(tx_id, "AGENT", "AGENT_ERROR", f"Gemini ({model}) failed: {type(e).__name__}: {e}"[:500], {})
+                reason = f"Gemini failed: {type(e).__name__}"
+                if not any(s in str(e) for s in ("NOT_FOUND", "404", "503", "UNAVAILABLE", "429")) \
+                        and not isinstance(e, asyncio.TimeoutError):
+                    break
+        if mode == "gemini":
+            raise RuntimeError(reason)
+        if not eng.rewind(tx_id):
+            eng.emit(tx_id, "AGENT", "AGENT_DONE", "Gemini attempt already wrote live; not re-running", {})
+            return ""
+    eng.emit(tx_id, "AGENT", "AGENT_MODE", f"deterministic scripted agent ({reason})", {"mode": "scripted"})
     out = _run_scripted(docs, tools)
     eng.emit(tx_id, "AGENT", "AGENT_DONE", out, {})
     return out

@@ -151,6 +151,18 @@ class Engine:
         return {"ok": True, "mode": "shadow" if spec.mutating else "shadow_read", "tx_id": tx.tx_id,
                 "result": res, "staged": spec.mutating}
 
+    def rewind(self, tx_id: str) -> bool:
+        """Drop everything staged so far (agent retry). False if live writes already happened."""
+        tx = self._tx(tx_id)
+        if tx.live_steps:
+            return False
+        if tx.staged:
+            self.emit(tx.tx_id, "STAGE", "SHADOW_REWIND", f"discarded {len(tx.staged)} staged call(s) before retry", {})
+        self.twin.discard(tx)
+        tx.staged.clear()
+        tx.pre_images.clear()
+        return True
+
     def commit(self, tx_id: str) -> dict:
         tx = self._tx(tx_id)
         t_start = time.perf_counter()
