@@ -134,11 +134,14 @@ async def events_stream(request: Request):
     eng = get_engine()
 
     async def gen():
-        sent, idle = 0, 0.0
+        sent, idle, epoch = 0, 0.0, eng.events_epoch
         yield "retry: 2000\n\n"
         while not await request.is_disconnected():
             evs = eng.events
-            if len(evs) < sent:  # log was cleared by a reset
+            # A reset replaces the log. Compare the epoch, not the length: a reset followed by a
+            # burst of new events between two polls leaves the log *longer* than before.
+            if eng.events_epoch != epoch or len(evs) < sent:
+                epoch = eng.events_epoch
                 sent = 0
                 yield "event: reset\ndata: {}\n\n"
             if len(evs) > sent:

@@ -35,6 +35,7 @@ class Engine:
         self.saga = SagaCoordinator(self.services, self.emit)
         self.ledger = Ledger()
         self.events: list[dict] = []
+        self.events_epoch = 0  # bumped on every reset so SSE streams can tell the log was replaced
         self._ev_lock = threading.Lock()
         self.txs: dict[str, Transaction] = {}
 
@@ -71,6 +72,7 @@ class Engine:
             self.txs.clear()
         with self._ev_lock:
             self.events.clear()
+            self.events_epoch += 1
         self.emit("", "ADMIN", "RESET", "all services reset to seed state", all_hashes(self.services))
         return self.state()
 
