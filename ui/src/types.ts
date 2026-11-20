@@ -45,12 +45,35 @@ export interface TxReceipt {
     [key: string]: string;
   };
   hashes_match: boolean;
-  rollback_ms: number;
+  rollback_ms: number | null;
   compensations: CompensationStep[];
   commit_order?: string[];
   staged_deltas?: Array<Record<string, unknown>>;
   receipt_hash: string;
   prev_hash: string;
+  ts?: string;
+  aegis_enabled?: boolean;
+  commit_ms?: number;
+  invariant_checks?: InvariantCheck[];
+  steps?: SagaStep[];
+  failure?: Record<string, unknown> | null;
+  quarantine?: Array<{ entity: string; three_way_diff: Record<string, { base: unknown; ours: unknown; theirs: unknown }> }>;
+}
+
+export interface InvariantCheck {
+  name: string;
+  layer: number;
+  result: 'PASS' | 'FAIL' | 'ESCALATE_HITL' | 'SKIPPED' | string;
+  detail: Record<string, unknown>;
+}
+
+export interface SagaStep {
+  step?: number;
+  tool: string;
+  status: string;
+  result?: Record<string, unknown>;
+  error?: { status: number; message: string };
+  args?: Record<string, unknown>;
 }
 
 export interface PurchaseOrder {
