@@ -18,6 +18,11 @@ from .engine import get_engine
 from .registry import public_tools
 
 app = FastAPI(title="Ablate Transactional MCP Proxy", version="0.1.0")
+
+# Demo runs, bench runs and resets each wipe the shared databases, so they must not interleave:
+# on a shared deployment two visitors clicking at once would reset each other mid-run.
+# They queue on this lock instead (each run takes well under a second).
+DEMO_LOCK = asyncio.Lock()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
                    expose_headers=["Mcp-Session-Id"])
 
@@ -62,8 +67,9 @@ def admin_config(body: ConfigBody):
 
 
 @app.post("/admin/reset")
-def admin_reset():
-    return get_engine().reset()
+async def admin_reset():
+    async with DEMO_LOCK:
+        return await run_in_threadpool(get_engine().reset)
 
 
 @app.get("/state")
@@ -162,7 +168,8 @@ async def events_stream(request: Request):
 async def bench_run():
     """Run the 10-case AegisBench-MCP (deterministic, no LLM). Resets the DBs when done."""
     from agent.scenarios import bench_table, run_bench
-    report = await run_in_threadpool(run_bench)
+    async with DEMO_LOCK:
+        report = await run_in_threadpool(run_bench)
     return {**report, "markdown": bench_table(report)}
 
 
@@ -172,7 +179,8 @@ async def demo_run(act: str):
         return JSONResponse(status_code=404, content={"ok": False, "error": {"status": 404,
                             "message": f"unknown act {act}", "data": {"acts": list(ACTS)}}})
     from agent.scenarios import run_act
-    return await run_act(act)
+    async with DEMO_LOCK:
+        return await run_act(act)
 
 
 from pathlib import Path

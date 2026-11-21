@@ -50,7 +50,11 @@ async def run_act(act: str) -> dict:
         eng.emit(tx_id, "AGENT", "RUNNER_COMMIT", "agent did not commit; the scenario runner committed the tx", {})
         receipt = eng.commit(tx_id)
     else:
-        receipt = next(r for r in reversed(eng.ledger.all()) if r["tx_id"] == tx_id)
+        receipt = next((r for r in reversed(eng.ledger.all()) if r["tx_id"] == tx_id), None)
+        if receipt is None:  # the tx vanished without a receipt (e.g. reset by another caller)
+            from services.common import ToolError
+            raise ToolError(409, "demo run interrupted: the databases were reset mid-run; please retry",
+                            {"act": act, "tx_id": tx_id})
     return {"act": act, "receipt": receipt, "state": eng.state()}
 
 

@@ -1,13 +1,14 @@
 import type { ProxyEvent, TxReceipt } from '../types';
 import { INVARIANT_META, Pill, checkTone, friendlyArgs, friendlyToolName, friendlyUndoStrategy } from './ui';
 
-// Center pane: layman-clear view of Ablate staging, safety rules, and automatic undo, paced by stage.
+// Center pane: 6-stage step-by-step view of Ablate staging (Stage 3), safety rules (Stage 4),
+// mid-flight error detection (Stage 5), and automatic undo (Stage 6).
 
 export default function ShadowPane({
   events,
   receipt,
   aegis,
-  stage = 4,
+  stage = 6,
 }: {
   events: ProxyEvent[];
   receipt: TxReceipt | null;
@@ -35,26 +36,30 @@ export default function ShadowPane({
       </header>
 
       <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-3.5">
-        {!aegis && stage >= 2 && (
+        {!aegis && stage >= 3 && (
           <div className="rounded-lg border border-[#f0d3cf] bg-[#fffbfa] px-3 py-2.5 text-[12px] text-danger">
             <span className="font-bold">Ablate is Turned Off:</span> Updates skipped the staging sandbox and modified
             live databases directly with no undo protection.
           </div>
         )}
 
-        {/* 1. Staged Changes */}
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-[12px] font-bold text-ink">1. Safe Staging Sandbox</span>
+        {/* Section 1: Safe Staging Sandbox (Revealed at Stage 3) */}
+        <div
+          className={`rounded-xl border p-3 transition-all duration-300 ${
+            stage === 3 ? 'border-[#1d4ed8] bg-[#eef4ff]/40 ring-1 ring-[#1d4ed8]' : 'border-line bg-white'
+          }`}
+        >
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[12px] font-bold text-ink">Step 3 · Safe Staging Sandbox</span>
             <span className="text-[11px] text-muted">Holds changes before touching live DBs</span>
           </div>
-          {stage >= 2 && aegis && staged.length > 0 ? (
+          {stage >= 3 && aegis && staged.length > 0 ? (
             <ul className="space-y-1">
               {staged.map((e, i) => {
                 const rawTool = e.message.split(' ')[0];
                 const args = ((e.data as Record<string, unknown>).args ?? {}) as Record<string, unknown>;
                 return (
-                  <li key={i} className="rounded-lg border border-line bg-paper px-3 py-1.5">
+                  <li key={i} className="rounded-lg border border-line bg-paper px-2.5 py-1.5">
                     <div className="text-[12px] font-bold text-ink">{friendlyToolName(rawTool)}</div>
                     <div className="text-[11px] text-[#374151]">{friendlyArgs(rawTool, args)}</div>
                   </li>
@@ -63,19 +68,27 @@ export default function ShadowPane({
             </ul>
           ) : (
             <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[12px] text-muted">
-              {!aegis ? 'Bypassed (Ablate Off)' : stage === 1 ? 'Capturing proposed updates…' : 'Ready to stage updates'}
+              {!aegis
+                ? 'Bypassed (Ablate Off)'
+                : stage < 3
+                  ? 'Waiting for AI Assistant to propose updates…'
+                  : 'Ready to stage updates'}
             </div>
           )}
         </div>
 
-        {/* 2. Safety Rules */}
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-[12px] font-bold text-ink">2. Company Safety Rules</span>
+        {/* Section 2: Company Safety Rules (Revealed at Stage 4) */}
+        <div
+          className={`rounded-xl border p-3 transition-all duration-300 ${
+            stage === 4 ? 'border-[#1d4ed8] bg-[#eef4ff]/40 ring-1 ring-[#1d4ed8]' : 'border-line bg-white'
+          }`}
+        >
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[12px] font-bold text-ink">Step 4 · Company Safety Rules</span>
             <span className="text-[11px] text-muted">Zero AI Guesswork</span>
           </div>
-          {stage >= 2 && checks.length > 0 ? (
-            <ul className="divide-y divide-line rounded-lg border border-line">
+          {stage >= 4 && checks.length > 0 ? (
+            <ul className="divide-y divide-line rounded-lg border border-line bg-white">
               {checks.slice(0, 5).map((c, i) => {
                 const key = c.name.startsWith('dry_run') ? 'dry_run' : c.name;
                 const meta = INVARIANT_META[key];
@@ -97,27 +110,35 @@ export default function ShadowPane({
             </ul>
           ) : (
             <div className="rounded-lg border border-dashed border-line px-3 py-2 text-[12px] text-muted">
-              {!aegis ? 'Rules skipped (Ablate Off)' : 'Verifying 5 company rules…'}
+              {!aegis ? 'Rules skipped (Ablate Off)' : 'Checks 5 company rules after staging…'}
             </div>
           )}
         </div>
 
-        {/* 3. Automatic Rollback */}
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-[12px] font-bold text-ink">3. Automatic Undo on Failure</span>
-            {stage >= 4 && typeof receipt?.rollback_ms === 'number' && (
+        {/* Section 3: Automatic Rollback (Stage 5 shows error, Stage 6 shows Undo) */}
+        <div
+          className={`rounded-xl border p-3 transition-all duration-300 ${
+            stage === 5
+              ? 'border-[#f3d9a4] bg-[#fef7e6]/60 ring-1 ring-[#f3d9a4]'
+              : stage === 6 && comps.length > 0
+                ? 'border-[#15803d] bg-[#f3faf5]/50'
+                : 'border-line bg-white'
+          }`}
+        >
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[12px] font-bold text-ink">Step 6 · Automatic Undo on Failure</span>
+            {stage >= 6 && typeof receipt?.rollback_ms === 'number' && (
               <span className="rounded bg-[#e3f2e8] px-2 py-0.5 text-[11px] font-bold text-[#14532d]">
                 Undone in {receipt.rollback_ms.toFixed(1)} ms
               </span>
             )}
           </div>
 
-          {stage === 3 && receipt?.status !== 'ABORTED_IN_SHADOW' ? (
+          {stage === 5 && receipt?.status !== 'ABORTED_IN_SHADOW' ? (
             <div className="rounded-lg border border-[#f3d9a4] bg-[#fef7e6] px-3 py-2.5 text-[12px] font-semibold text-[#5c3700]">
-              Billing failed at Step 4! Triggering automatic undo…
+              Step 5: Billing rejected the $2,000 credit note (Invoice #88 locked)! Preparing rollback…
             </div>
-          ) : stage >= 4 && comps.length > 0 ? (
+          ) : stage >= 6 && comps.length > 0 ? (
             <ol className="space-y-1">
               {comps.map((c, i) => {
                 const isQuarantined = c.status === 'QUARANTINED_CONCURRENT_EDIT';
@@ -140,12 +161,12 @@ export default function ShadowPane({
                 );
               })}
             </ol>
-          ) : stage >= 2 && receipt?.status === 'ABORTED_IN_SHADOW' ? (
+          ) : stage >= 4 && receipt?.status === 'ABORTED_IN_SHADOW' ? (
             <div className="rounded-lg border border-[#cce5d5] bg-[#f3faf5] px-3 py-2 text-[12px] text-[#14532d]">
-              <span className="font-bold">Stopped in Sandbox:</span> Fraudulent wire was blocked before touching any
-              database.
+              <span className="font-bold">Stopped in Sandbox:</span> Fraudulent wire was blocked at Step 4 before
+              touching any database.
             </div>
-          ) : stage >= 4 && receipt?.status === 'PARTIAL_CORRUPTION' ? (
+          ) : stage >= 6 && receipt?.status === 'PARTIAL_CORRUPTION' ? (
             <div className="rounded-lg border border-[#f0d3cf] bg-[#fffbfa] px-3 py-2 text-[12px] text-danger">
               <span className="font-bold">No Undo Available:</span> Orders and Warehouse stayed stuck at 480 boxes.
             </div>

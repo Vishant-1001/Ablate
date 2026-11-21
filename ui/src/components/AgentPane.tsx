@@ -1,13 +1,15 @@
 import type { ProxyEvent } from '../types';
 import { friendlyArgs, friendlyToolName } from './ui';
 
-// Left pane: concise, layman-clear list of what the AI Assistant requests, revealed step-by-step.
+// Left pane: 6-stage step-by-step reveal of the AI Assistant's actions.
+// Stage 1: AI reads existing records (get_po, get_inventory, get_invoice)
+// Stage 2+: AI proposes the write updates (update_po_qty, adjust_reservation, post_gl_adjustment, issue_credit_note/send_wire_payout)
+// Stage 5+: Shows any rejection / security block response
 
 const SHOWN = new Set(['TOOL_CALL', 'TAINT_VIOLATION', 'LIVE_FAILED']);
 
-export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[]; stage?: number }) {
+export default function AgentPane({ events, stage = 6 }: { events: ProxyEvent[]; stage?: number }) {
   const allRows = events.filter((e) => SHOWN.has(e.type));
-  // Deduplicate repeated 409 retries in Act 1 so the list stays clean and concise
   const seenTools = new Set<string>();
   const rows = allRows.filter((e) => {
     if (e.type === 'TOOL_CALL') {
@@ -18,14 +20,20 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
     return true;
   });
 
-  const visibleRows =
-    stage === 0
-      ? []
-      : stage === 1
-        ? rows.filter((e) => e.type === 'TOOL_CALL' && e.message.includes('.get_'))
-        : stage === 2
-          ? rows.filter((e) => e.type !== 'LIVE_FAILED')
-          : rows;
+  const visibleRows = rows.filter((e) => {
+    if (stage <= 0) return false;
+    if (e.type === 'TOOL_CALL') {
+      const rawTool = e.message.split(' called ')[1] ?? e.message;
+      const isRead = rawTool.includes('.get_');
+      const isCommit = rawTool.includes('commit_tx');
+      if (isRead) return stage >= 1;
+      if (isCommit) return stage >= 3;
+      return stage >= 2;
+    }
+    if (e.type === 'TAINT_VIOLATION') return stage >= 4;
+    if (e.type === 'LIVE_FAILED') return stage >= 5;
+    return stage >= 5;
+  });
 
   return (
     <section className="flex min-h-0 flex-col rounded-xl border border-line bg-white">
@@ -47,6 +55,7 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
         )}
         {visibleRows.map((e, i) => {
           const d = (e.data ?? {}) as Record<string, unknown>;
+          const isLatest = i === visibleRows.length - 1 && stage < 6;
           if (e.type === 'TOOL_CALL') {
             const rawTool = e.message.split(' called ')[1] ?? e.message;
             const args = (d.args ?? {}) as Record<string, unknown>;
@@ -56,11 +65,13 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
               <li
                 key={i}
                 className={`rounded-lg border px-3 py-2 transition-all duration-300 ${
-                  isCommit
-                    ? 'border-[#1d4ed8]/30 bg-[#eef4ff]/60'
-                    : isRead
-                      ? 'border-line bg-white'
-                      : 'border-line bg-paper'
+                  isLatest
+                    ? 'border-[#1d4ed8] bg-[#eef4ff] ring-1 ring-[#1d4ed8]'
+                    : isCommit
+                      ? 'border-[#1d4ed8]/30 bg-[#eef4ff]/60'
+                      : isRead
+                        ? 'border-line bg-white'
+                        : 'border-line bg-paper'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -74,7 +85,7 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
                           : 'bg-ink text-white'
                     }`}
                   >
-                    {isCommit ? 'Commit' : isRead ? 'Read' : 'Update'}
+                    {isCommit ? 'Commit' : isRead ? 'Step 1 · Read' : 'Step 2 · Update'}
                   </span>
                 </div>
                 <div className="mt-0.5 text-[12px] text-[#374151]">{friendlyArgs(rawTool, args)}</div>
@@ -83,7 +94,7 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
           }
           if (e.type === 'TAINT_VIOLATION') {
             return (
-              <li key={i} className="rounded-lg border border-[#f0d3cf] bg-[#fffbfa] px-3 py-2 text-[12px]">
+              <li key={i} className="rounded-lg border-2 border-danger bg-[#fffbfa] px-3 py-2 text-[12px]">
                 <div className="font-bold text-danger">Blocked: Unauthorized $12,000 Bank Wire</div>
                 <div className="mt-0.5 text-[#374151]">
                   Tampered invoice text tried to send $12,000 to an unapproved bank account.
@@ -93,8 +104,8 @@ export default function AgentPane({ events, stage = 4 }: { events: ProxyEvent[];
           }
           if (e.type === 'LIVE_FAILED') {
             return (
-              <li key={i} className="rounded-lg border border-[#f0d3cf] bg-[#fffbfa] px-3 py-2 text-[12px]">
-                <div className="font-bold text-danger">Billing Rejected $2,000 Credit Note</div>
+              <li key={i} className="rounded-lg border-2 border-danger bg-[#fffbfa] px-3 py-2 text-[12px]">
+                <div className="font-bold text-danger">Step 5 · Billing Rejected $2,000 Credit Note</div>
                 <div className="mt-0.5 text-[#374151]">Invoice #88 is locked by a nightly billing batch.</div>
               </li>
             );

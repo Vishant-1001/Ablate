@@ -26,7 +26,7 @@ import {
   short,
   verdictOf,
 } from './components/ui';
-import MissionControl from './components/MissionControl';
+import MissionControl, { type DemoSpeed, SPEED_MS } from './components/MissionControl';
 
 const DEFAULT_API =
   typeof window !== 'undefined' && window.location.port !== '5173'
@@ -57,7 +57,6 @@ function routeHash(page: Page, tx: string | null): string {
   return `#/${page}`;
 }
 
-const wait = (ms: number) => new Promise((res) => window.setTimeout(res, ms));
 
 export default function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
@@ -80,7 +79,9 @@ export default function App() {
   const [events, setEvents] = useState<ProxyEvent[]>([]);
   const [receipts, setReceipts] = useState<TxReceipt[]>([]);
   const [running, setRunning] = useState<string | null>(null);
-  const [stage, setStage] = useState<number>(4);
+  const [stage, setStage] = useState<number>(6);
+  const [speed, setSpeed] = useState<DemoSpeed>('normal');
+  const [paused, setPaused] = useState<boolean>(false);
   const [online, setOnline] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,28 +178,34 @@ export default function App() {
     return res.json();
   };
 
-  // Paced step-by-step playback (~3.2 seconds total) so users clearly watch:
-  // Stage 1 (AI reads) -> Stage 2 (Ablate checks rules) -> Stage 3 (500 -> 480 & Billing fails) -> Stage 4 (Undo restores 500!)
+  // Auto-advance step-by-step timer controlled by `speed` and `paused`
+  useEffect(() => {
+    if (stage <= 0 || stage >= 6 || paused || speed === 'manual' || running) return;
+    const delay = SPEED_MS[speed];
+    const timer = window.setTimeout(() => {
+      setStage((prev) => {
+        const latestStatus = receipts.length ? receipts[receipts.length - 1].status : undefined;
+        // For Fraudulent Wire (ABORTED_IN_SHADOW), skip Step 5 (live DB flush) since it's blocked at Step 4
+        if (prev === 4 && latestStatus === 'ABORTED_IN_SHADOW') return 6;
+        return Math.min(6, prev + 1);
+      });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [stage, paused, speed, running, receipts]);
+
   const runAct = async (act: DemoAct) => {
     setRunning(act);
     setError(null);
+    setPaused(false);
     go('mission', null);
     setStage(1);
     try {
       await post(`/demo/run/${act}`);
       const [ev] = await Promise.all([fetch(`${API_BASE}/events`), refresh()]);
       if (ev.ok) setEvents(((await ev.json()) as { events?: ProxyEvent[] }).events ?? []);
-      await wait(950);
-      setStage(2);
-      await wait(1100);
-      if (act !== 'act3_injection') {
-        setStage(3);
-        await wait(1250);
-      }
-      setStage(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setStage(4);
+      setStage(6);
     } finally {
       setRunning(null);
     }
@@ -305,6 +312,17 @@ export default function App() {
             config={config}
             running={running}
             stage={stage}
+            speed={speed}
+            paused={paused}
+            onSetStage={(s) => {
+              setPaused(true);
+              setStage(s);
+            }}
+            onSetSpeed={(sp) => {
+              setSpeed(sp);
+              if (sp !== 'manual') setPaused(false);
+            }}
+            onTogglePause={() => setPaused((p) => !p)}
             onRun={runAct}
             onConfig={setConfig}
             onReset={reset}
