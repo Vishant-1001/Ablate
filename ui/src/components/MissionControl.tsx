@@ -257,7 +257,12 @@ export default function MissionControl(props: {
             AI Assistant Requests Changes
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <AgentPane events={txEvents} stage={receipt ? stage : 0} />
+            <AgentPane
+              events={txEvents}
+              receipt={receipt}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
 
@@ -269,7 +274,13 @@ export default function MissionControl(props: {
             Ablate Checks Rules &amp; Auto-Undoes Errors
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <ShadowPane events={txEvents} receipt={receipt} aegis={aegis} stage={receipt ? stage : 0} />
+            <ShadowPane
+              events={txEvents}
+              receipt={receipt}
+              aegis={aegis}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
 
@@ -281,7 +292,12 @@ export default function MissionControl(props: {
             Live Company Databases (Orders · Warehouse · Billing)
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <LiveStatePane state={state} receipt={receipt} stage={receipt ? stage : 0} />
+            <LiveStatePane
+              state={state}
+              receipt={receipt}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
       </div>
