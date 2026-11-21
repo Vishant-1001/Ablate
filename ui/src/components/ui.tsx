@@ -352,18 +352,18 @@ export function StepCallout({
   }[tone];
 
   return (
-    <div className={`relative mt-2.5 rounded-xl border-2 p-3.5 shadow-lg transition-all duration-300 ${borderBg}`}>
+    <div className={`relative mt-3 rounded-xl border-2 p-4 shadow-lg transition-all duration-300 ${borderBg}`}>
       {/* Pointer arrow pointing up to the active step element */}
-      <div className=" -top-2.5 left-6 absolute h-4 w-4 rotate-45 border-l-2 border-t-2 border-inherit bg-[#111318]" />
-      <div className="flex items-center justify-between gap-2">
-        <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${badgeBg}`}>
+      <div className="-top-2.5 left-6 absolute h-4 w-4 rotate-45 border-l-2 border-t-2 border-inherit bg-[#111318]" />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className={`rounded-md px-2.5 py-1 text-[12px] font-bold uppercase tracking-[0.06em] ${badgeBg}`}>
           Step {step} of 6 · {title}
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {onPrev && step > 1 && (
             <button
               onClick={onPrev}
-              className="rounded border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+              className="rounded-md border border-white/25 bg-white/10 px-2.5 py-1 text-[12px] font-semibold text-white hover:bg-white/20"
             >
               ← Prev
             </button>
@@ -371,14 +371,14 @@ export function StepCallout({
           {onNext && step < 6 && (
             <button
               onClick={onNext}
-              className="rounded bg-[#1d4ed8] px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1e40af]"
+              className="rounded-md bg-[#1d4ed8] px-3 py-1 text-[12px] font-semibold text-white hover:bg-[#1e40af]"
             >
               Next Step →
             </button>
           )}
         </div>
       </div>
-      <p className="mt-2 text-[12.5px] leading-relaxed text-[#e5e7eb]">{text}</p>
+      <p className="mt-2.5 text-[15px] font-medium leading-relaxed text-white sm:text-[16px]">{text}</p>
     </div>
   );
 }
