@@ -180,91 +180,93 @@ export default function MissionControl(props: {
           })}
         </div>
 
-        {/* Interactive 6-Step Playback Bar (Prev / Pause-Resume / Next + Clickable Step Pills) */}
-        {receipt && stage > 0 && (
-          <div className="mt-3.5 rounded-xl border border-line bg-white p-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {/* Step transport buttons */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => props.onSetStage(Math.max(1, stage - 1))}
-                  disabled={stage <= 1}
-                  className="rounded-lg border border-line bg-paper px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-[#e5e7eb] disabled:opacity-40"
-                >
-                  ← Prev Step
-                </button>
-                {speed !== 'manual' && stage < 6 && (
-                  <button
-                    onClick={props.onTogglePause}
-                    className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white ${
-                      paused ? 'bg-[#15803d]' : 'bg-ink'
-                    }`}
-                  >
-                    {paused ? '▶ Resume' : '⏸ Pause'}
-                  </button>
-                )}
-                <button
-                  onClick={() => props.onSetStage(Math.min(6, stage + 1))}
-                  disabled={stage >= 6}
-                  className="rounded-lg bg-[#1d4ed8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1e40af] disabled:opacity-40"
-                >
-                  Next Step →
-                </button>
-              </div>
-
-              {/* 6 Clickable Step Pills */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                {STEPS.map((st) => {
-                  const active = stage === st.n;
-                  const done = stage > st.n;
-                  return (
-                    <button
-                      key={st.n}
-                      onClick={() => props.onSetStage(st.n)}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
-                        active
-                          ? 'bg-[#1d4ed8] text-white shadow-sm'
-                          : done
-                            ? 'bg-[#e3f2e8] text-[#14532d] hover:bg-[#cce5d5]'
-                            : 'bg-[#f3f4f6] text-muted hover:bg-[#e5e7eb]'
-                      }`}
-                    >
-                      {st.short}
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Interactive 6-Step Playback Bar (Always Visible: Prev / Pause-Resume / Next + Clickable Step Pills) */}
+        <div className="mt-3.5 rounded-xl border border-line bg-white p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Step transport buttons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => props.onSetStage(Math.max(1, (stage || 1) - 1))}
+                disabled={stage <= 1}
+                className="rounded-lg border border-line bg-paper px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-[#e5e7eb] disabled:opacity-40"
+              >
+                ← Prev Step
+              </button>
+              <button
+                onClick={props.onTogglePause}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white ${
+                  paused ? 'bg-[#15803d]' : 'bg-ink'
+                }`}
+              >
+                {paused ? '▶ Resume' : '⏸ Pause'}
+              </button>
+              <button
+                onClick={() => props.onSetStage(Math.min(6, (stage || 0) + 1))}
+                disabled={stage >= 6}
+                className="rounded-lg bg-[#1d4ed8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1e40af] disabled:opacity-40"
+              >
+                Next Step →
+              </button>
             </div>
 
-            {/* Current Step Explanation Line */}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
-              <div className="flex items-center gap-2.5 text-[13px]">
-                <span
-                  className={`rounded-md px-2.5 py-0.5 text-[11px] font-bold ${
-                    stage < 6 ? 'bg-[#eef4ff] text-[#1d4ed8]' : v.block
-                  }`}
-                >
-                  {stage < 6 ? `STEP ${stage} OF 6` : v.label}
-                </span>
-                <span className="font-medium text-ink">
-                  {stage < 6
+            {/* 6 Clickable Step Pills */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {STEPS.map((st) => {
+                const active = stage === st.n;
+                const done = stage > st.n;
+                return (
+                  <button
+                    key={st.n}
+                    onClick={() => props.onSetStage(st.n)}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                      active
+                        ? 'bg-[#1d4ed8] text-white shadow-sm'
+                        : done
+                          ? 'bg-[#e3f2e8] text-[#14532d] hover:bg-[#cce5d5]'
+                          : 'bg-[#f3f4f6] text-muted hover:bg-[#e5e7eb]'
+                    }`}
+                  >
+                    {st.short}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Current Step Explanation Line */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
+            <div className="flex items-center gap-2.5 text-[13px]">
+              <span
+                className={`rounded-md px-2.5 py-0.5 text-[11px] font-bold ${
+                  !receipt || stage === 0
+                    ? 'bg-[#f3f4f6] text-[#374151]'
+                    : stage < 6
+                      ? 'bg-[#eef4ff] text-[#1d4ed8]'
+                      : v.block
+                }`}
+              >
+                {!receipt || stage === 0 ? 'READY' : stage < 6 ? `STEP ${stage} OF 6` : v.label}
+              </span>
+              <span className="font-medium text-ink">
+                {!receipt || stage === 0
+                  ? 'Click any scenario above (1–4) to watch all 6 steps execute live, or click any step pill (1–6) to inspect it.'
+                  : stage < 6
                     ? currentStepInfo?.detail
                     : activeScenario
                       ? activeScenario.plainSummary
                       : v.line}
-                </span>
-              </div>
-              {stage >= 6 && props.onOpenTx && (
-                <button
-                  onClick={() => props.onOpenTx?.(receipt.tx_id)}
-                  className="text-[13px] font-semibold text-[#1d4ed8] underline"
-                >
-                  View Audit Report →
-                </button>
-              )}
+              </span>
             </div>
+            {receipt && stage >= 6 && props.onOpenTx && (
+              <button
+                onClick={() => props.onOpenTx?.(receipt.tx_id)}
+                className="text-[13px] font-semibold text-[#1d4ed8] underline"
+              >
+                View Audit Report →
+              </button>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* 3 Simple Columns */}
