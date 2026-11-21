@@ -253,9 +253,9 @@ export default function App() {
           <nav className="hidden items-center gap-7 md:flex">
             {[
               ['solutions', 'Solutions'],
+              ['deployment', 'Role-Based Deployment'],
               ['how-it-works', 'How It Works'],
-              ['integrations', 'Integrations'],
-              ['pricing', 'Pricing'],
+              ['pricing', 'Pricing Comparison'],
             ].map(([id, label]) => (
               <button
                 key={id}
@@ -556,161 +556,289 @@ function Overview(props: {
         </div>
       </section>
 
-      {/* 3. How It Works & Integrations */}
-      <section id="how-it-works" className="mx-auto max-w-[1140px] px-6 py-12">
-        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">How It Works</div>
-        <h2 className="mt-1 text-[24px] font-bold">Four steps on every autonomous transaction</h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ['01 · Stage in Sandbox', 'Holds proposed updates in memory before touching live records.'],
-            ['02 · Verify 5 Policies', 'Enforces accounting, inventory, dollar cap, and bank IBAN rules.'],
-            ['03 · Hold Payouts Last', 'Executes reversible updates first and holds irreversible wires until last.'],
-            ['04 · Auto-Undo on Error', 'Reverses partial changes in milliseconds if any downstream system fails.'],
-          ].map(([title, desc]) => (
-            <div key={title} className="rounded-xl border border-line bg-white p-5">
-              <div className="text-[14px] font-bold text-ink">{title}</div>
-              <p className="mt-1.5 text-[13px] text-[#374151]">{desc}</p>
-            </div>
-          ))}
+      {/* 3. Role-Based Enterprise Adoption & Deployment (Dedicated High-Visibility Section) */}
+      <section id="deployment" className="mx-auto max-w-[1140px] px-6 py-12">
+        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1d4ed8]">
+          Role-Based Enterprise Adoption
         </div>
+        <h2 className="mt-1 text-[26px] font-bold text-ink">
+          How each team in your enterprise deploys and operates Ablate
+        </h2>
+        <p className="mt-1.5 max-w-[680px] text-[14px] text-[#374151]">
+          Ablate fits directly into your existing engineering, cloud infrastructure, and compliance workflows without
+          requiring any changes to your AI agent prompts or application code.
+        </p>
 
-        <div id="integrations" className="mt-8 rounded-xl border border-line bg-paper p-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
+          <div className="flex flex-col justify-between rounded-xl border border-line bg-white p-5 shadow-sm">
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#1d4ed8]">
-                Drop-In Enterprise Compatibility
-              </div>
-              <div className="mt-0.5 text-[15px] font-bold text-ink">
-                Works with your existing AI frameworks and core business systems
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-[12px] font-semibold text-[#374151]">
-              {['Google ADK', 'Gemini', 'MCP Standard', 'NetSuite ERP', 'SAP', 'Warehouse WMS', 'Stripe Billing'].map(
-                (tag) => (
-                  <span key={tag} className="rounded-lg border border-line bg-white px-3 py-1">
-                    {tag}
-                  </span>
-                ),
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* How Each Type of Enterprise User Deploys & Uses Ablate */}
-        <div className="mt-10">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1d4ed8]">
-            Role-Based Enterprise Adoption
-          </div>
-          <h3 className="mt-1 text-[22px] font-bold text-ink">
-            How every team in your organization deploys and uses Ablate
-          </h3>
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-line bg-white p-5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#1d4ed8]">
                   01 · AI &amp; Application Engineers
                 </span>
-                <span className="rounded bg-[#eef4ff] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#1d4ed8]">
+                <span className="rounded bg-[#eef4ff] px-2.5 py-0.5 font-mono text-[11px] font-bold text-[#1d4ed8]">
                   1-Line Proxy URL
                 </span>
               </div>
-              <div className="mt-2 text-[16px] font-bold text-ink">Drop-In MCP Endpoint (Zero Code Rewrites)</div>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+              <div className="mt-2.5 text-[17px] font-bold text-ink">Drop-In MCP Endpoint (Zero Code Rewrites)</div>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#374151]">
                 Point your Google ADK, LangGraph, or Claude agent’s MCP tool URL to Ablate instead of raw production
                 APIs. Every tool call is automatically staged and protected at runtime.
               </p>
-              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
-                MCP_URL = "https://tx.ablate.company.com/mcp"
-              </div>
             </div>
+            <div className="mt-4 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-[11.5px] text-ink">
+              MCP_URL = "https://tx.ablate.company.com/mcp"
+            </div>
+          </div>
 
-            <div className="rounded-xl border border-line bg-white p-5">
+          <div className="flex flex-col justify-between rounded-xl border border-line bg-white p-5 shadow-sm">
+            <div>
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#15803d]">
-                  02 · DevOps &amp; Platform Security
+                  02 · DevOps &amp; Cloud Security
                 </span>
-                <span className="rounded bg-[#e3f2e8] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#14532d]">
-                  Cloud Run / VPC + YAML
+                <span className="rounded bg-[#e3f2e8] px-2.5 py-0.5 font-mono text-[11px] font-bold text-[#14532d]">
+                  Cloud Run / Private VPC
                 </span>
               </div>
-              <div className="mt-2 text-[16px] font-bold text-ink">Managed Cloud or Self-Hosted VPC Container</div>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+              <div className="mt-2.5 text-[17px] font-bold text-ink">Managed Cloud or Self-Hosted VPC Container</div>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#374151]">
                 Deploy in 2 minutes on Google Cloud Run or as a Docker/Helm container inside your Private VPC. Define
                 pre-built ERP/Billing undo mappings and dollar caps in a declarative config file.
               </p>
-              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
-                gcloud run deploy ablate --region asia-south1
-              </div>
             </div>
+            <div className="mt-4 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-[11.5px] text-ink">
+              gcloud run deploy ablate --region asia-south1
+            </div>
+          </div>
 
-            <div className="rounded-xl border border-line bg-white p-5">
+          <div className="flex flex-col justify-between rounded-xl border border-line bg-white p-5 shadow-sm">
+            <div>
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#5c3700]">
                   03 · Operations &amp; Compliance Teams
                 </span>
-                <span className="rounded bg-[#fbebc8] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#5c3700]">
+                <span className="rounded bg-[#fbebc8] px-2.5 py-0.5 font-mono text-[11px] font-bold text-[#5c3700]">
                   Web Control Plane
                 </span>
               </div>
-              <div className="mt-2 text-[16px] font-bold text-ink">Live Operations Dashboard &amp; Audit Reports</div>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+              <div className="mt-2.5 text-[17px] font-bold text-ink">Live Operations Console &amp; Audit Exports</div>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#374151]">
                 Monitor multi-system rollbacks in real time, approve transactions held above the $5,000 limit, review
                 protected human manager edits, and export SHA-256 hash-chained logs for SOX &amp; ISO audits.
               </p>
-              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
-                Activity Log · 3-Way Human Edit Diffs · SOX Export
+            </div>
+            <div className="mt-4 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-[11.5px] text-ink">
+              Activity Log · 3-Way Human Edit Diffs · SOX Export
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. How It Works & Integrations */}
+      <section id="how-it-works" className="border-t border-line bg-white">
+        <div className="mx-auto max-w-[1140px] px-6 py-12">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">How It Works</div>
+          <h2 className="mt-1 text-[24px] font-bold">Four steps on every autonomous transaction</h2>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['01 · Stage in Sandbox', 'Holds proposed updates in memory before touching live records.'],
+              ['02 · Verify 5 Policies', 'Enforces accounting, inventory, dollar cap, and bank IBAN rules.'],
+              ['03 · Hold Payouts Last', 'Executes reversible updates first and holds irreversible wires until last.'],
+              ['04 · Auto-Undo on Error', 'Reverses partial changes in milliseconds if any downstream system fails.'],
+            ].map(([title, desc]) => (
+              <div key={title} className="rounded-xl border border-line bg-paper/60 p-5">
+                <div className="text-[14px] font-bold text-ink">{title}</div>
+                <p className="mt-1.5 text-[13px] text-[#374151]">{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div id="integrations" className="mt-8 rounded-xl border border-line bg-paper p-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#1d4ed8]">
+                  Drop-In Enterprise Compatibility
+                </div>
+                <div className="mt-0.5 text-[15px] font-bold text-ink">
+                  Works with your existing AI frameworks and core business systems
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[12px] font-semibold text-[#374151]">
+                {['Google ADK', 'Gemini', 'MCP Standard', 'NetSuite ERP', 'SAP', 'Warehouse WMS', 'Stripe Billing'].map(
+                  (tag) => (
+                    <span key={tag} className="rounded-lg border border-line bg-white px-3 py-1">
+                      {tag}
+                    </span>
+                  ),
+                )}
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 4. Pricing (No duplicate Demo buttons) */}
+      {/* 5. Side-by-Side Pricing & Feature Comparison Matrix */}
       <section id="pricing" className="border-t border-line bg-paper">
         <div className="mx-auto max-w-[1140px] px-6 py-12">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">Deployment &amp; Pricing</div>
-          <h2 className="mt-1 text-[24px] font-bold">Managed Cloud or Private VPC deployment</h2>
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1d4ed8]">
+            Transparent Pricing &amp; Plan Comparison
+          </div>
+          <h2 className="mt-1 text-[26px] font-bold text-ink">
+            Side-by-side plan comparison for engineering teams and enterprises
+          </h2>
+          <p className="mt-1 text-[14px] text-[#374151]">
+            Zero per-seat fees and zero LLM token markup—because Ablate’s policy and rollback engine is 100%
+            deterministic code.
+          </p>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl border border-line bg-white p-5">
-              <div className="text-[11px] font-bold uppercase text-muted">Sandbox &amp; Evaluation</div>
-              <div className="mt-1.5 text-[26px] font-bold">
-                $0 <span className="text-[13px] font-normal text-muted">/ mo</span>
-              </div>
-              <ul className="mt-3 space-y-1.5 text-[13px] text-[#374151]">
-                <li>✓ Staging sandbox &amp; 5 safety rules</li>
-                <li>✓ Automatic rollback engine</li>
-                <li>✓ Hash-chained audit log</li>
-              </ul>
-            </div>
+          {/* Side-by-Side Comparison Matrix Table */}
+          <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[780px] border-collapse text-left text-[13.5px]">
+                <thead>
+                  <tr className="border-b border-line bg-paper/70">
+                    <th className="w-[31%] px-6 py-5 align-top">
+                      <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">
+                        Capability / Plan Tier
+                      </div>
+                      <div className="mt-2 text-[16px] font-bold text-ink">Compare Plans Side by Side</div>
+                      <div className="mt-1 text-[12px] font-normal text-muted">
+                        Start free in staging, scale on Cloud Run or inside your Private VPC.
+                      </div>
+                    </th>
 
-            <div className="rounded-xl border-2 border-ink bg-white p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase text-[#1d4ed8]">Business Cloud</span>
-                <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[10px] font-bold text-[#1d4ed8]">
-                  Popular
-                </span>
-              </div>
-              <div className="mt-1.5 text-[26px] font-bold">
-                $1,500 <span className="text-[13px] font-normal text-muted">/ mo</span>
-              </div>
-              <ul className="mt-3 space-y-1.5 text-[13px] text-[#374151]">
-                <li>✓ 50,000 protected workflows / mo</li>
-                <li>✓ NetSuite, SAP, Stripe &amp; Salesforce connectors</li>
-                <li>✓ Managed Google Cloud Run control plane</li>
-              </ul>
-            </div>
+                    {/* Tier 1: Developer Sandbox */}
+                    <th className="w-[23%] border-l border-line px-5 py-5 align-top">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted">
+                        Developer Sandbox
+                      </div>
+                      <div className="mt-2 text-[28px] font-extrabold text-ink">
+                        $0 <span className="text-[13px] font-normal text-muted">/ month</span>
+                      </div>
+                      <div className="text-[12px] font-medium text-muted">₹0 · Free forever</div>
+                      <div className="mt-2 text-[12px] font-normal text-[#374151]">
+                        For local agent prototyping, CI fault injection, and staging evaluations.
+                      </div>
+                    </th>
 
-            <div className="rounded-xl border border-line bg-white p-5">
-              <div className="text-[11px] font-bold uppercase text-muted">Enterprise Private VPC</div>
-              <div className="mt-1.5 text-[26px] font-bold">
-                $6,000 <span className="text-[13px] font-normal text-muted">/ mo</span>
-              </div>
-              <ul className="mt-3 space-y-1.5 text-[13px] text-[#374151]">
-                <li>✓ Deployed inside your GCP / AWS VPC</li>
-                <li>✓ Custom ERP rules &amp; human-edit protection</li>
-                <li>✓ SOX / ISO compliance exports &amp; 99.99% SLA</li>
-              </ul>
+                    {/* Tier 2: Growth Cloud (Highlighted) */}
+                    <th className="w-[23%] border-l-2 border-r-2 border-ink bg-[#eef4ff]/35 px-5 py-5 align-top">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#1d4ed8]">
+                          Growth Cloud
+                        </span>
+                        <span className="rounded-full bg-[#1d4ed8] px-2.5 py-0.5 text-[10px] font-bold text-white">
+                          Most Popular
+                        </span>
+                      </div>
+                      <div className="mt-2 text-[28px] font-extrabold text-ink">
+                        $299 <span className="text-[13px] font-normal text-muted">/ month</span>
+                      </div>
+                      <div className="text-[12px] font-medium text-[#1d4ed8]">≈ ₹24,999 / month</div>
+                      <div className="mt-2 text-[12px] font-normal text-[#374151]">
+                        Managed Google Cloud Run control plane for production write-action agents.
+                      </div>
+                    </th>
+
+                    {/* Tier 3: Enterprise Private VPC */}
+                    <th className="w-[23%] px-5 py-5 align-top">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-ink">
+                        Enterprise Private VPC
+                      </div>
+                      <div className="mt-2 text-[28px] font-extrabold text-ink">
+                        $1,499 <span className="text-[13px] font-normal text-muted">/ month</span>
+                      </div>
+                      <div className="text-[12px] font-medium text-muted">≈ ₹1,25,000 / mo (annual)</div>
+                      <div className="mt-2 text-[12px] font-normal text-[#374151]">
+                        Self-hosted inside your GCP / AWS Private VPC for regulated enterprises &amp; GCCs.
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-line">
+                  {(
+                    [
+                      [
+                        'Included Protected Transactions',
+                        '2,500 / month',
+                        '50,000 / month (+$4 per 1,000 extra)',
+                        '500,000+ / month (Custom volume)',
+                      ],
+                      [
+                        'Deployment Architecture',
+                        'Local Docker / CLI',
+                        'Managed Google Cloud Run',
+                        'Customer Private VPC (GCP / AWS / On-Prem)',
+                      ],
+                      [
+                        'Data Residency & Privacy',
+                        'Local machine',
+                        'Isolated tenant DB (asia-south1 / us-central1)',
+                        '100% in-VPC (Zero data leaves your network)',
+                      ],
+                      [
+                        'Safe Multi-System Staging Sandbox',
+                        'Included ✓',
+                        'Included ✓',
+                        'Included ✓',
+                      ],
+                      [
+                        'Deterministic Policy Gate (0 LLM Cost)',
+                        '5 Core Policies',
+                        'Unlimited Custom YAML Policies',
+                        'Unlimited + Custom ERP Validation Hooks',
+                      ],
+                      [
+                        'Automatic Reverse-Saga Rollback (< 20 ms)',
+                        'Included ✓',
+                        'Included ✓',
+                        'Included ✓',
+                      ],
+                      [
+                        'Pre-Built Enterprise Undo Connectors',
+                        'Reference SQLite & REST',
+                        'NetSuite, Stripe, Shopify, Jira & WMS',
+                        'All Connectors + SAP, Oracle & Custom APIs',
+                      ],
+                      [
+                        'Concurrent Human Manager Edit Protection',
+                        'Basic version check',
+                        'Full ETag 3-Way Diff & Quarantine ✓',
+                        'Full 3-Way Diff + Slack / PagerDuty Alerts ✓',
+                      ],
+                      [
+                        'High-Value Payout Approval Queue',
+                        'Single dollar cap',
+                        'Role-based approval queue ($5k+ cap) ✓',
+                        'Multi-signer quorum & CFO policy routing ✓',
+                      ],
+                      [
+                        'SHA-256 Audit Chain & Compliance Exports',
+                        'Local JSON download',
+                        '90-day audit retention + Webhook export',
+                        '7-year SOX / ISO 27001 retention + SIEM feed',
+                      ],
+                      [
+                        'Support & Uptime SLA',
+                        'Community & Docs',
+                        'Priority Engineering Support (99.9% SLA)',
+                        '24/7 Dedicated FDE Support & 99.99% SLA',
+                      ],
+                    ] as Array<[string, string, string, string]>
+                  ).map(([feature, col1, col2, col3]) => (
+                    <tr key={feature} className="hover:bg-paper/40">
+                      <td className="px-6 py-3.5 font-semibold text-ink">{feature}</td>
+                      <td className="border-l border-line px-5 py-3.5 text-[#374151]">{col1}</td>
+                      <td className="border-l-2 border-r-2 border-ink bg-[#eef4ff]/20 px-5 py-3.5 font-semibold text-ink">
+                        {col2}
+                      </td>
+                      <td className="px-5 py-3.5 font-medium text-[#374151]">{col3}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
