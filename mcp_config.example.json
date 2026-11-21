@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ablate": {
+      "command": "python",
+      "args": ["-m", "ablate_tx.mcp_stdio"],
+      "env": {
+        "ABLATE_URL": "https://ablate-324699159359.asia-south1.run.app"
+      }
+    }
+  }
+}
