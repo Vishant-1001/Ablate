@@ -187,6 +187,21 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
 _UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
+
+
+class _UIFiles(StaticFiles):
+    """index.html must be re-checked on every visit so a redeploy shows up immediately;
+    the hashed files under /assets never change, so they can be cached for a year."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if path.replace("\\", "/").lstrip("/").startswith("assets/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 if _UI_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_UI_DIST), html=True), name="ui")
+    app.mount("/", _UIFiles(directory=str(_UI_DIST), html=True), name="ui")
 

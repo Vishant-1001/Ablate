@@ -89,7 +89,15 @@ export const VERDICT: Record<string, { label: string; block: string; pill: strin
 export const verdictOf = (s?: string) => VERDICT[s ?? ''] ?? VERDICT.COMMITTED;
 
 /** Plain-English title for any tool name */
-export function friendlyToolName(tool: string): string {
+/** Agent events name tools "erp_get_po"; MCP names them "erp.get_po". Map both to the MCP form. */
+export function normalizeTool(tool: string): string {
+  const t = tool.trim();
+  if (t === 'commit_transaction') return 'ablate.commit_tx';
+  return t.includes('.') ? t : t.replace(/^(erp|wms|billing)_/, '$1.');
+}
+
+export function friendlyToolName(rawTool: string): string {
+  const tool = normalizeTool(rawTool);
   const map: Record<string, string> = {
     'erp.get_po': 'Read ERP Purchase Order',
     'erp.update_po_qty': 'Update ERP Purchase Order Quantity',
@@ -109,7 +117,8 @@ export function friendlyToolName(tool: string): string {
 }
 
 /** Plain-English summary of tool arguments */
-export function friendlyArgs(tool: string, args: Record<string, unknown> = {}): string {
+export function friendlyArgs(rawTool: string, args: Record<string, unknown> = {}): string {
+  const tool = normalizeTool(rawTool);
   if (tool === 'erp.get_po') return `Order ${String(args.po_id ?? 'PO-1042')}`;
   if (tool === 'wms.get_inventory') return `Item ${String(args.sku ?? 'SKU-900')}`;
   if (tool === 'billing.get_invoice') return `Invoice ${String(args.invoice_id ?? 'INV-88')}`;
@@ -311,3 +320,66 @@ export function DataTable({ rows }: { rows: Array<Record<string, unknown>> }) {
     </div>
   );
 }
+
+/** Guided dialogue box that appears directly attached to the active step in the demo */
+export function StepCallout({
+  step,
+  title,
+  text,
+  tone = 'blue',
+  onPrev,
+  onNext,
+}: {
+  step: number;
+  title: string;
+  text: string;
+  tone?: 'blue' | 'green' | 'amber' | 'red';
+  onPrev?: () => void;
+  onNext?: () => void;
+}) {
+  const borderBg = {
+    blue: 'border-[#1d4ed8] bg-[#111318] text-white',
+    green: 'border-[#15803d] bg-[#111318] text-white',
+    amber: 'border-[#d97706] bg-[#111318] text-white',
+    red: 'border-danger bg-[#111318] text-white',
+  }[tone];
+
+  const badgeBg = {
+    blue: 'bg-[#1d4ed8] text-white',
+    green: 'bg-[#15803d] text-white',
+    amber: 'bg-[#d97706] text-white',
+    red: 'bg-danger text-white',
+  }[tone];
+
+  return (
+    <div className={`relative mt-2.5 rounded-xl border-2 p-3.5 shadow-lg transition-all duration-300 ${borderBg}`}>
+      {/* Pointer arrow pointing up to the active step element */}
+      <div className=" -top-2.5 left-6 absolute h-4 w-4 rotate-45 border-l-2 border-t-2 border-inherit bg-[#111318]" />
+      <div className="flex items-center justify-between gap-2">
+        <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${badgeBg}`}>
+          Step {step} of 6 · {title}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {onPrev && step > 1 && (
+            <button
+              onClick={onPrev}
+              className="rounded border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+            >
+              ← Prev
+            </button>
+          )}
+          {onNext && step < 6 && (
+            <button
+              onClick={onNext}
+              className="rounded bg-[#1d4ed8] px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1e40af]"
+            >
+              Next Step →
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-[#e5e7eb]">{text}</p>
+    </div>
+  );
+}
+

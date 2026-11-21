@@ -4,14 +4,6 @@ import LiveStatePane from './LiveStatePane';
 import ShadowPane from './ShadowPane';
 import { verdictOf } from './ui';
 
-export type DemoSpeed = 'slow' | 'normal' | 'fast' | 'manual';
-
-export const SPEED_MS: Record<Exclude<DemoSpeed, 'manual'>, number> = {
-  slow: 2600,
-  normal: 1600,
-  fast: 750,
-};
-
 const SCENARIOS: Array<{
   id: DemoAct;
   n: number;
@@ -59,12 +51,36 @@ const SCENARIOS: Array<{
 ];
 
 const STEPS: Array<{ n: number; short: string; detail: string }> = [
-  { n: 1, short: '1. Read Records', detail: 'Step 1 of 6 · AI Assistant reads Order #1042 (500 boxes), Warehouse (500), and Invoice #88 ($50,000).' },
-  { n: 2, short: '2. Propose Updates', detail: 'Step 2 of 6 · AI Assistant proposes reducing Order & Warehouse to 480 boxes and issuing a $2,000 refund.' },
-  { n: 3, short: '3. Safe Sandbox', detail: 'Step 3 of 6 · Ablate captures the updates in the Staging Sandbox (0 live databases touched).' },
-  { n: 4, short: '4. Check 5 Rules', detail: 'Step 4 of 6 · Ablate verifies all 5 company safety rules with zero AI guesswork.' },
-  { n: 5, short: '5. Apply & Fault', detail: 'Step 5 of 6 · Orders & Warehouse update to 480 boxes… then Billing fails (Invoice #88 is locked)!' },
-  { n: 6, short: '6. Auto-Undo', detail: 'Step 6 of 6 · Final result across all 3 company databases.' },
+  {
+    n: 1,
+    short: 'Step 1 · Read Records',
+    detail: 'AI Assistant reads Order #1042 (500 boxes), Warehouse (500 reserved), and Invoice #88 ($50,000).',
+  },
+  {
+    n: 2,
+    short: 'Step 2 · Propose Updates',
+    detail: 'AI Assistant proposes reducing Order & Warehouse to 480 boxes and issuing a $2,000 refund credit.',
+  },
+  {
+    n: 3,
+    short: 'Step 3 · Safe Sandbox',
+    detail: 'Ablate captures the proposed updates inside the Staging Sandbox (0 live databases touched).',
+  },
+  {
+    n: 4,
+    short: 'Step 4 · Check 5 Rules',
+    detail: 'Ablate verifies all 5 company safety rules with zero AI guesswork.',
+  },
+  {
+    n: 5,
+    short: 'Step 5 · Apply & Fault',
+    detail: 'Orders & Warehouse update to 480 boxes… then Billing fails (Invoice #88 is locked)!',
+  },
+  {
+    n: 6,
+    short: 'Step 6 · Final Result',
+    detail: 'Final state across all 3 company databases.',
+  },
 ];
 
 export default function MissionControl(props: {
@@ -74,17 +90,13 @@ export default function MissionControl(props: {
   config: RuntimeConfig;
   running: string | null;
   stage: number;
-  speed: DemoSpeed;
-  paused: boolean;
   onSetStage: (s: number) => void;
-  onSetSpeed: (sp: DemoSpeed) => void;
-  onTogglePause: () => void;
   onRun: (a: DemoAct) => void;
   onConfig: (p: Partial<RuntimeConfig>) => void;
   onReset: () => void;
   onOpenTx?: (txId: string) => void;
 }) {
-  const { events, receipts, state, config, running, stage, speed, paused } = props;
+  const { events, receipts, state, config, running, stage } = props;
   const latestReceipt = receipts.length ? receipts[receipts.length - 1] : null;
   const begin = [...events].reverse().find((e) => e.type === 'TX_BEGIN');
   const txId = begin?.tx_id ?? latestReceipt?.tx_id ?? null;
@@ -97,51 +109,25 @@ export default function MissionControl(props: {
   const currentStepInfo = STEPS.find((st) => st.n === stage);
 
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-5">
+    <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-line bg-paper p-4">
-        {/* Top Header + Speed Controller */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#1d4ed8]">
-              Interactive Step-by-Step Demo
+              Step-by-Step Interactive Simulator
             </div>
-            <h1 className="mt-0.5 text-[19px] font-bold text-ink">
-              Scenario: 480 Boxes Delivered Instead of 500 ($2,000 Refund Needed Across 3 Systems)
-            </h1>
+            <h2 className="mt-0.5 text-[18px] font-bold text-ink">
+              Business Case: 480 Boxes Delivered Instead of 500 ($2,000 Refund Needed Across 3 Systems)
+            </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Speed Selector */}
-            <div className="flex items-center rounded-lg border border-line bg-white p-1 text-[12px]">
-              <span className="px-2 font-semibold text-muted">Speed:</span>
-              {(
-                [
-                  ['slow', 'Slow (2.6s)'],
-                  ['normal', 'Normal (1.6s)'],
-                  ['fast', 'Fast (0.8s)'],
-                  ['manual', 'Manual Click'],
-                ] as Array<[DemoSpeed, string]>
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => props.onSetSpeed(id)}
-                  className={`rounded-md px-2.5 py-1 font-semibold transition ${
-                    speed === id ? 'bg-ink text-white' : 'text-[#374151] hover:bg-paper'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={props.onReset}
-              disabled={!!running}
-              className="rounded-lg border border-line bg-white px-3 py-1.5 text-[12px] font-medium hover:bg-[#f3f4f6] disabled:opacity-50"
-            >
-              {running === 'reset' ? 'Resetting…' : 'Reset to 500 Boxes'}
-            </button>
-          </div>
+          <button
+            onClick={props.onReset}
+            disabled={!!running}
+            className="rounded-lg border border-line bg-white px-3.5 py-1.5 text-[12px] font-medium hover:bg-[#f3f4f6] disabled:opacity-50"
+          >
+            {running === 'reset' ? 'Resetting…' : 'Reset All Systems to 500 Boxes'}
+          </button>
         </div>
 
         {/* 4 Simple Scenario Cards */}
@@ -173,37 +159,28 @@ export default function MissionControl(props: {
                       : 'bg-ink text-white hover:bg-black'
                   }`}
                 >
-                  {isRunningThis ? 'Loading…' : `Run Scenario ${s.n}`}
+                  {isRunningThis ? 'Loading Scenario…' : isSelected ? `Restart Scenario ${s.n}` : `Load Scenario ${s.n}`}
                 </button>
               </div>
             );
           })}
         </div>
 
-        {/* Interactive 6-Step Playback Bar (Always Visible: Prev / Pause-Resume / Next + Clickable Step Pills) */}
+        {/* Manual Step-by-Step Navigation Bar (Always Visible, Zero Auto-Advance) */}
         <div className="mt-3.5 rounded-xl border border-line bg-white p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Step transport buttons */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => props.onSetStage(Math.max(1, (stage || 1) - 1))}
-                disabled={stage <= 1}
-                className="rounded-lg border border-line bg-paper px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-[#e5e7eb] disabled:opacity-40"
+                disabled={!receipt || stage <= 1}
+                className="rounded-lg border border-line bg-paper px-3.5 py-2 text-[13px] font-semibold text-ink hover:bg-[#e5e7eb] disabled:opacity-40"
               >
-                ← Prev Step
-              </button>
-              <button
-                onClick={props.onTogglePause}
-                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white ${
-                  paused ? 'bg-[#15803d]' : 'bg-ink'
-                }`}
-              >
-                {paused ? '▶ Resume' : '⏸ Pause'}
+                ← Previous Step
               </button>
               <button
                 onClick={() => props.onSetStage(Math.min(6, (stage || 0) + 1))}
-                disabled={stage >= 6}
-                className="rounded-lg bg-[#1d4ed8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1e40af] disabled:opacity-40"
+                disabled={!receipt || stage >= 6}
+                className="rounded-lg bg-[#1d4ed8] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#1e40af] disabled:opacity-40"
               >
                 Next Step →
               </button>
@@ -212,13 +189,14 @@ export default function MissionControl(props: {
             {/* 6 Clickable Step Pills */}
             <div className="flex flex-wrap items-center gap-1.5">
               {STEPS.map((st) => {
-                const active = stage === st.n;
-                const done = stage > st.n;
+                const active = Boolean(receipt) && stage === st.n;
+                const done = Boolean(receipt) && stage > st.n;
                 return (
                   <button
                     key={st.n}
+                    disabled={!receipt}
                     onClick={() => props.onSetStage(st.n)}
-                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                    className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-50 ${
                       active
                         ? 'bg-[#1d4ed8] text-white shadow-sm'
                         : done
@@ -245,11 +223,11 @@ export default function MissionControl(props: {
                       : v.block
                 }`}
               >
-                {!receipt || stage === 0 ? 'READY' : stage < 6 ? `STEP ${stage} OF 6` : v.label}
+                {!receipt || stage === 0 ? 'SELECT A SCENARIO' : stage < 6 ? `STEP ${stage} OF 6` : v.label}
               </span>
               <span className="font-medium text-ink">
                 {!receipt || stage === 0
-                  ? 'Click any scenario above (1–4) to watch all 6 steps execute live, or click any step pill (1–6) to inspect it.'
+                  ? 'Load any scenario above (1–4), then use "Next Step →" and "← Previous Step" to walk through each stage at your own pace.'
                   : stage < 6
                     ? currentStepInfo?.detail
                     : activeScenario
@@ -262,7 +240,7 @@ export default function MissionControl(props: {
                 onClick={() => props.onOpenTx?.(receipt.tx_id)}
                 className="text-[13px] font-semibold text-[#1d4ed8] underline"
               >
-                View Audit Report →
+                Open Detailed Report →
               </button>
             )}
           </div>
@@ -279,7 +257,12 @@ export default function MissionControl(props: {
             AI Assistant Requests Changes
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <AgentPane events={txEvents} stage={stage} />
+            <AgentPane
+              events={txEvents}
+              receipt={receipt}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
 
@@ -291,7 +274,13 @@ export default function MissionControl(props: {
             Ablate Checks Rules &amp; Auto-Undoes Errors
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <ShadowPane events={txEvents} receipt={receipt} aegis={aegis} stage={stage} />
+            <ShadowPane
+              events={txEvents}
+              receipt={receipt}
+              aegis={aegis}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
 
@@ -303,7 +292,12 @@ export default function MissionControl(props: {
             Live Company Databases (Orders · Warehouse · Billing)
           </div>
           <div className="flex min-h-[420px] flex-col [&>section]:flex-1">
-            <LiveStatePane state={state} receipt={receipt} stage={stage} />
+            <LiveStatePane
+              state={state}
+              receipt={receipt}
+              stage={receipt ? stage : 0}
+              onSetStage={props.onSetStage}
+            />
           </div>
         </div>
       </div>
