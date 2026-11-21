@@ -89,7 +89,15 @@ export const VERDICT: Record<string, { label: string; block: string; pill: strin
 export const verdictOf = (s?: string) => VERDICT[s ?? ''] ?? VERDICT.COMMITTED;
 
 /** Plain-English title for any tool name */
-export function friendlyToolName(tool: string): string {
+/** Agent events name tools "erp_get_po"; MCP names them "erp.get_po". Map both to the MCP form. */
+export function normalizeTool(tool: string): string {
+  const t = tool.trim();
+  if (t === 'commit_transaction') return 'ablate.commit_tx';
+  return t.includes('.') ? t : t.replace(/^(erp|wms|billing)_/, '$1.');
+}
+
+export function friendlyToolName(rawTool: string): string {
+  const tool = normalizeTool(rawTool);
   const map: Record<string, string> = {
     'erp.get_po': 'Read ERP Purchase Order',
     'erp.update_po_qty': 'Update ERP Purchase Order Quantity',
@@ -109,7 +117,8 @@ export function friendlyToolName(tool: string): string {
 }
 
 /** Plain-English summary of tool arguments */
-export function friendlyArgs(tool: string, args: Record<string, unknown> = {}): string {
+export function friendlyArgs(rawTool: string, args: Record<string, unknown> = {}): string {
+  const tool = normalizeTool(rawTool);
   if (tool === 'erp.get_po') return `Order ${String(args.po_id ?? 'PO-1042')}`;
   if (tool === 'wms.get_inventory') return `Item ${String(args.sku ?? 'SKU-900')}`;
   if (tool === 'billing.get_invoice') return `Invoice ${String(args.invoice_id ?? 'INV-88')}`;

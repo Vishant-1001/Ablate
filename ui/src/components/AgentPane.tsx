@@ -8,6 +8,11 @@ import { friendlyArgs, friendlyToolName } from './ui';
 
 const SHOWN = new Set(['TOOL_CALL', 'TAINT_VIOLATION', 'LIVE_FAILED']);
 
+// Tool names arrive as "erp_get_po" (agent function names) or "erp.get_po" (MCP names).
+function toolKind(rawTool: string): { isRead: boolean; isCommit: boolean } {
+  return { isRead: /(^|[._])get_/.test(rawTool), isCommit: rawTool.includes('commit') };
+}
+
 export default function AgentPane({ events, stage = 6 }: { events: ProxyEvent[]; stage?: number }) {
   const allRows = events.filter((e) => SHOWN.has(e.type));
   const seenTools = new Set<string>();
@@ -24,8 +29,7 @@ export default function AgentPane({ events, stage = 6 }: { events: ProxyEvent[];
     if (stage <= 0) return false;
     if (e.type === 'TOOL_CALL') {
       const rawTool = e.message.split(' called ')[1] ?? e.message;
-      const isRead = rawTool.includes('.get_');
-      const isCommit = rawTool.includes('commit_tx');
+      const { isRead, isCommit } = toolKind(rawTool);
       if (isRead) return stage >= 1;
       if (isCommit) return stage >= 3;
       return stage >= 2;
@@ -59,8 +63,7 @@ export default function AgentPane({ events, stage = 6 }: { events: ProxyEvent[];
           if (e.type === 'TOOL_CALL') {
             const rawTool = e.message.split(' called ')[1] ?? e.message;
             const args = (d.args ?? {}) as Record<string, unknown>;
-            const isRead = rawTool.includes('.get_');
-            const isCommit = rawTool.includes('commit_tx');
+            const { isRead, isCommit } = toolKind(rawTool);
             return (
               <li
                 key={i}

@@ -138,7 +138,13 @@ export default function App() {
         }
       };
       es.addEventListener('proxy', (m) => {
-        setEvents((prev) => [...prev, JSON.parse((m as MessageEvent).data) as ProxyEvent]);
+        const ev = JSON.parse((m as MessageEvent).data) as ProxyEvent;
+        // runAct also re-fetches the full log, so a streamed event may already be in the list.
+        setEvents((prev) =>
+          prev.some((p) => p.ts === ev.ts && p.type === ev.type && p.tx_id === ev.tx_id && p.message === ev.message)
+            ? prev
+            : [...prev, ev],
+        );
         soon();
       });
       es.addEventListener('reset', () => {
@@ -711,13 +717,14 @@ function CaseFile({
         ? 'Blocked in sandbox — zero live databases modified'
         : 'All company rules verified prior to execution',
     ],
-    [
-      comps.every((c) => c.status === 'COMPENSATED') || comps.length === 0,
-      comps.length
-        ? `${comps.filter((c) => c.status === 'COMPENSATED').length} of ${comps.length} automatic undo steps completed`
-        : 'No rollback required',
-    ],
-    [linked, 'Sealed into tamper-evident compliance ledger'],
+    (() => {
+      const undone = comps.filter((c) => c.status === 'COMPENSATED').length;
+      const kept = comps.filter((c) => c.status === 'QUARANTINED_CONCURRENT_EDIT').length;
+      if (!comps.length) return [true, 'No rollback required'] as [boolean, string];
+      if (kept) return [undone + kept === comps.length, `${undone} changes undone · the manager's edit was kept, not overwritten`] as [boolean, string];
+      return [undone === comps.length, `${undone} of ${comps.length} changes undone`] as [boolean, string];
+    })(),
+    [linked, 'Saved to the audit log (any later edit would be detected)'],
   ];
   if (!receipt.aegis_enabled) {
     integrity.splice(1, 2, [false, 'Ablate Protection was Off: no sandbox, no rules, no undo']);
@@ -959,6 +966,7 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
     chain_valid: boolean;
     receipts: number;
     verified: number;
+    first_broken: { index: number; tx_id: string; reason: string } | null;
   };
   const [server, setServer] = useState<VerifyReport | null>(null);
   const [checking, setChecking] = useState(false);
@@ -981,7 +989,7 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
     <div className="mx-auto max-w-[1140px] px-6 py-8">
       <h1 className="text-[24px] font-bold">Compliance &amp; Audit Verification</h1>
       <p className="text-[13px] text-muted">
-        Every workflow is sealed into a tamper-proof audit log for financial and regulatory compliance.
+        Every workflow is saved to an audit log. Each record includes a fingerprint (SHA-256 hash) of the record before it, so if anyone edits or deletes an old record, the check below fails.
       </p>
 
       <div
@@ -993,21 +1001,21 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
           {!server
             ? 'Checking audit log…'
             : server.chain_valid
-              ? `All ${server.verified} Audit Records Verified Authentic ✓`
-              : 'Audit Alert: Tampering Detected'}
+              ? `All ${server.verified} audit records unchanged ✓`
+              : `Audit alert: record #${(server.first_broken?.index ?? 0) + 1} was changed after it was saved`}
         </div>
         <button
           onClick={() => void runVerify()}
           disabled={checking}
           className="rounded-lg bg-ink px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-black disabled:opacity-50"
         >
-          {checking ? 'Verifying…' : 'Verify Audit Log'}
+          {checking ? 'Checking…' : 'Check Audit Log'}
         </button>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Total Audit Records" value={receipts.length} />
-        <Stat label="Verified Authentic" value={`${verified}/${receipts.length}`} />
+        <Stat label="Records Unchanged" value={`${verified}/${receipts.length}`} />
         <Stat label="Auto-Restored Runs" value={clean} />
         <Stat label="Threats Blocked" value={blocked} />
       </div>
@@ -1041,7 +1049,7 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
                       </span>
                     </td>
                     <td className={`px-5 py-2.5 font-semibold ${links[i] ? 'text-[#15803d]' : 'text-danger'}`}>
-                      {links[i] ? 'Verified ✓' : 'Tampered ✗'}
+                      {links[i] ? 'Unchanged ✓' : 'Changed ✗'}
                     </td>
                   </tr>
                 ))}
@@ -1052,7 +1060,7 @@ function Assurance({ receipts, onOpen }: { receipts: TxReceipt[]; onOpen: (t: st
         {r && pick !== null && (
           <div className={`h-fit rounded-xl border-2 p-4 ${links[pick] ? 'border-[#15803d]' : 'border-danger'}`}>
             <div className={`text-[11px] font-bold uppercase ${links[pick] ? 'text-[#15803d]' : 'text-danger'}`}>
-              RECORD #{pick + 1} · VERIFIED AUTHENTIC
+              RECORD #{pick + 1} · {links[pick] ? 'UNCHANGED' : 'CHANGED AFTER SAVING'}
             </div>
             <div className="mt-1.5 text-[15px] font-bold text-ink">{friendlyReceiptTitle(r, pick)}</div>
             <div className="mt-1 text-[12px] text-[#374151]">{verdictOf(r.status).line}</div>
