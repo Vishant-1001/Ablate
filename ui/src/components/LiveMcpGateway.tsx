@@ -155,8 +155,11 @@ export default function LiveMcpGateway(props: {
   };
 
   const recentEvents = [...events].reverse().slice(0, 8);
-  const poQty = (state?.erp as { purchase_orders?: Record<string, { qty?: number }> } | undefined)?.purchase_orders?.['PO-1042']?.qty ?? 500;
-  const stockQty = (state?.warehouse as { inventory?: Record<string, { reserved?: number }> } | undefined)?.inventory?.['SKU-900']?.reserved ?? 500;
+  const rawState = state as Record<string, unknown> | null;
+  const erpOrders = (rawState?.erp as { purchase_orders?: Record<string, { qty?: number }> } | undefined)?.purchase_orders;
+  const invMap = (rawState?.inventory as { stock?: Record<string, { reserved?: number }> } | undefined)?.stock;
+  const poQty = erpOrders?.['PO-1042']?.qty ?? 500;
+  const stockQty = invMap?.['SKU-900']?.reserved ?? 500;
 
   return (
     <div className="flex flex-col gap-5">
@@ -309,17 +312,21 @@ export default function LiveMcpGateway(props: {
                   Click any MCP Call button on the left—or send a prompt from Claude Desktop—to watch live MCP events stream here.
                 </div>
               ) : (
-                recentEvents.map((ev, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-2 rounded-md border border-line bg-paper px-3 py-1.5 text-[12px]"
-                  >
-                    <span className="font-mono font-bold text-ink">{ev.type}</span>
-                    <span className="truncate text-muted">
-                      {ev.tool ? `${ev.tool}` : ev.tx_id ? `Session ${ev.tx_id.slice(0, 8)}` : 'System Event'}
-                    </span>
-                  </div>
-                ))
+                recentEvents.map((ev, idx) => {
+                  const evData = ev as unknown as Record<string, unknown>;
+                  const toolName = typeof evData.tool === 'string' ? evData.tool : null;
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-2 rounded-md border border-line bg-paper px-3 py-1.5 text-[12px]"
+                    >
+                      <span className="font-mono font-bold text-ink">{ev.type}</span>
+                      <span className="truncate text-muted">
+                        {toolName ? toolName : ev.tx_id ? `Session ${ev.tx_id.slice(0, 8)}` : 'System Event'}
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
