@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ablate
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: USE_GEMINI_CACHE
+        value: "1"
+      - key: ABLATE_DATA_DIR
+        value: /app/data
