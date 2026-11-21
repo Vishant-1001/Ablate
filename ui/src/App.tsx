@@ -27,6 +27,7 @@ import {
   verdictOf,
 } from './components/ui';
 import MissionControl from './components/MissionControl';
+import LiveMcpGateway from './components/LiveMcpGateway';
 
 const DEFAULT_API =
   typeof window !== 'undefined' && window.location.port !== '5173'
@@ -34,16 +35,17 @@ const DEFAULT_API =
     : 'http://localhost:8000';
 const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API).replace(/\/+$/, '');
 
-type Page = 'overview' | 'mission' | 'transactions' | 'case' | 'evidence' | 'assurance';
+type Page = 'overview' | 'mission' | 'transactions' | 'case' | 'evidence' | 'assurance' | 'mcp';
 
 const DEMO_TABS: Array<{ id: Page; label: string }> = [
   { id: 'mission', label: '1. Step-by-Step Simulator' },
   { id: 'transactions', label: '2. Activity Log & Reports' },
   { id: 'assurance', label: '3. Compliance & Audit Verification' },
+  { id: 'mcp', label: '4. Live MCP Gateway' },
 ];
 
 type Route = { page: Page; tx: string | null };
-const PAGES: Page[] = ['overview', 'mission', 'transactions', 'case', 'evidence', 'assurance'];
+const PAGES: Page[] = ['overview', 'mission', 'transactions', 'case', 'evidence', 'assurance', 'mcp'];
 function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'tx' && parts[1]) return { page: parts[2] === 'evidence' ? 'evidence' : 'case', tx: parts[1] };
@@ -375,6 +377,9 @@ export default function App() {
           />
         )}
         {page === 'assurance' && <Assurance receipts={receipts} onOpen={openTx} />}
+        {page === 'mcp' && (
+          <LiveMcpGateway apiBase={API_BASE} events={events} state={state} onRefresh={() => void refresh()} />
+        )}
       </main>
 
       {/* Professional Enterprise Multi-Column Footer */}
