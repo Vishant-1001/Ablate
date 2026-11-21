@@ -595,6 +595,74 @@ function Overview(props: {
             </div>
           </div>
         </div>
+
+        {/* How Each Type of Enterprise User Deploys & Uses Ablate */}
+        <div className="mt-10">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1d4ed8]">
+            Role-Based Enterprise Adoption
+          </div>
+          <h3 className="mt-1 text-[22px] font-bold text-ink">
+            How every team in your organization deploys and uses Ablate
+          </h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#1d4ed8]">
+                  01 · AI &amp; Application Engineers
+                </span>
+                <span className="rounded bg-[#eef4ff] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#1d4ed8]">
+                  1-Line Proxy URL
+                </span>
+              </div>
+              <div className="mt-2 text-[16px] font-bold text-ink">Drop-In MCP Endpoint (Zero Code Rewrites)</div>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+                Point your Google ADK, LangGraph, or Claude agent’s MCP tool URL to Ablate instead of raw production
+                APIs. Every tool call is automatically staged and protected at runtime.
+              </p>
+              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
+                MCP_URL = "https://tx.ablate.company.com/mcp"
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#15803d]">
+                  02 · DevOps &amp; Platform Security
+                </span>
+                <span className="rounded bg-[#e3f2e8] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#14532d]">
+                  Cloud Run / VPC + YAML
+                </span>
+              </div>
+              <div className="mt-2 text-[16px] font-bold text-ink">Managed Cloud or Self-Hosted VPC Container</div>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+                Deploy in 2 minutes on Google Cloud Run or as a Docker/Helm container inside your Private VPC. Define
+                pre-built ERP/Billing undo mappings and dollar caps in a declarative config file.
+              </p>
+              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
+                gcloud run deploy ablate --region asia-south1
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-line bg-white p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#5c3700]">
+                  03 · Operations &amp; Compliance Teams
+                </span>
+                <span className="rounded bg-[#fbebc8] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#5c3700]">
+                  Web Control Plane
+                </span>
+              </div>
+              <div className="mt-2 text-[16px] font-bold text-ink">Live Operations Dashboard &amp; Audit Reports</div>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-[#374151]">
+                Monitor multi-system rollbacks in real time, approve transactions held above the $5,000 limit, review
+                protected human manager edits, and export SHA-256 hash-chained logs for SOX &amp; ISO audits.
+              </p>
+              <div className="mt-3 rounded-lg bg-paper px-3 py-2 font-mono text-[11px] text-[#374151]">
+                Activity Log · 3-Way Human Edit Diffs · SOX Export
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* 4. Pricing (No duplicate Demo buttons) */}

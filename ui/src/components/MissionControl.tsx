@@ -211,11 +211,11 @@ export default function MissionControl(props: {
             </div>
           </div>
 
-          {/* Current Step Explanation Line */}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
-            <div className="flex items-center gap-2.5 text-[13px]">
+          {/* Current Step Explanation Line (Larger Font for Easy Reading) */}
+          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+            <div className="flex flex-1 items-center gap-3">
               <span
-                className={`rounded-md px-2.5 py-0.5 text-[11px] font-bold ${
+                className={`shrink-0 rounded-md px-3 py-1 text-[13px] font-bold ${
                   !receipt || stage === 0
                     ? 'bg-[#f3f4f6] text-[#374151]'
                     : stage < 6
@@ -225,7 +225,7 @@ export default function MissionControl(props: {
               >
                 {!receipt || stage === 0 ? 'SELECT A SCENARIO' : stage < 6 ? `STEP ${stage} OF 6` : v.label}
               </span>
-              <span className="font-medium text-ink">
+              <span className="text-[16px] font-semibold leading-snug text-ink sm:text-[17px]">
                 {!receipt || stage === 0
                   ? 'Load any scenario above (1–4), then use "Next Step →" and "← Previous Step" to walk through each stage at your own pace.'
                   : stage < 6
@@ -238,7 +238,7 @@ export default function MissionControl(props: {
             {receipt && stage >= 6 && props.onOpenTx && (
               <button
                 onClick={() => props.onOpenTx?.(receipt.tx_id)}
-                className="text-[13px] font-semibold text-[#1d4ed8] underline"
+                className="text-[14px] font-semibold text-[#1d4ed8] underline"
               >
                 Open Detailed Report →
               </button>
