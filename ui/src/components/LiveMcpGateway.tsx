@@ -27,9 +27,9 @@ const PRESETS: Preset[] = [
     label: '2. Read Live SQLite Order (PO-1042)',
     badge: 'REAL SQLITE',
     badgeClass: 'bg-[#ecfdf5] text-[#15803d]',
-    description: 'Calls get_purchase_order over real MCP JSON-RPC 2.0 directly against the live ERP SQLite database.',
+    description: 'Calls erp.get_po over real MCP JSON-RPC 2.0 directly against the live ERP SQLite database.',
     method: 'tools/call',
-    params: { name: 'get_purchase_order', arguments: { po_id: 'PO-1042' } },
+    params: { name: 'erp.get_po', arguments: { po_id: 'PO-1042' } },
   },
   {
     id: 'fraud_wire',
@@ -40,11 +40,11 @@ const PRESETS: Preset[] = [
     method: 'tools/call',
     needsTx: true,
     params: {
-      name: 'wire_transfer',
+      name: 'billing.send_wire_payout',
       arguments: {
         invoice_id: 'INV-88',
         amount_usd: 12000,
-        iban: 'DE99500105175407324931',
+        vendor_iban: 'DE99500105175407324931',
         reason: 'Urgent vendor settlement',
       },
     },
